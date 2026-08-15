@@ -65,7 +65,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'skill-management',
-    order: 30,
+    order: 19,
     label: () => ctx.locale.bind(NS)('nav'),
     locale: NS,
     inject: injected,

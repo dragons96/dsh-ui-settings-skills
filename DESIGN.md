@@ -111,7 +111,7 @@ GET /plugin/settings-skills/catalog
 
 ### 6.2 页面设计
 
-- **注册**：`settings.section`，`id: 'skill-management'`，`order: 30`（排在 Models / Agent Presets 之后），`label` 本地化（zh「技能」/ en「Skills」，对齐 ui-skill 的 Skill 术语），`locale` 命名空间 `settings.skillManagement`，`inject` face 提供 `load()`。
+- **注册**：`settings.section`，`id: 'skill-management'`，`order: 19`（排在 Plugins 页之后、Agent Presets 页之前；Agent Presets 页 `order: 20`，lower 值排序靠前），`label` 本地化（zh「技能」/ en「Skills」，对齐 ui-skill 的 Skill 术语），`locale` 命名空间 `settings.skillManagement`，`inject` face 提供 `load()`。
 - **布局**：维度选择（tabs 或分组列表）：
   - 全局（harness）组：所有全局可见技能。
   - 工作区组：每个工作区一个分组，显示该工作区标题；组内列出该 cwd 下的技能；与全局目录的差异即"该工作区独有/缺失"的可见性信号（M1 可用并集展示 + 维度徽标，不做过拟合的 diff 逻辑）。
