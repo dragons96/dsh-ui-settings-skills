@@ -8,7 +8,9 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Tooltip, IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconChevronLeftOutline14, IconChevronRightOutline14, IconSearchOutline16, Tooltip,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CatalogResponse, DimensionView, PutPolicyRequest, SkillRow } from '../wire.ts'
 import { sourceLabelKey, type SkillManagementKey } from './locales.ts'
 import css from './SkillManagementSection.module.css'
@@ -110,7 +112,9 @@ function SkillRowView({
         name: row.name,
         description: row.description,
         source: row.source,
-        enabled,
+        // The write carries the TARGET state: clicking an enabled switch
+        // disables the skill, clicking a disabled one re-enables it.
+        enabled: !enabled,
       })
       onChanged()
     } finally {
@@ -165,6 +169,11 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
   const [query, setQuery] = useState('')
   const tabsId = useId()
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const tabScrollRef = useRef<HTMLDivElement | null>(null)
+  const [scrollState, setScrollState] = useState({ left: 0, max: 0, thumbPct: 100, leftPct: 0 })
+  const [scrolling, setScrolling] = useState(false)
+  const [hovered, setHovered] = useState(false)
+  const scrollTimer = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     let cancelled = false
@@ -177,6 +186,31 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
     )
     return () => { cancelled = true }
   }, [load, attempt])
+
+  // The tab strip's scroll state: an overlay scrollbar shows while scrolling
+  // or hovering the strip and hides otherwise, without shifting layout.
+  useEffect(() => () => {
+    if (scrollTimer.current !== undefined) window.clearTimeout(scrollTimer.current)
+  }, [])
+
+  const updateScroll = (): void => {
+    const el = tabScrollRef.current
+    if (el === null) return
+    const max = Math.max(0, el.scrollWidth - el.clientWidth)
+    setScrollState({
+      left: el.scrollLeft,
+      max,
+      thumbPct: el.scrollWidth === 0 ? 100 : (el.clientWidth / el.scrollWidth) * 100,
+      leftPct: el.scrollWidth === 0 ? 0 : (el.scrollLeft / el.scrollWidth) * 100,
+    })
+    setScrolling(true)
+    if (scrollTimer.current !== undefined) window.clearTimeout(scrollTimer.current)
+    scrollTimer.current = window.setTimeout(() => { setScrolling(false) }, 300)
+  }
+
+  const scrollBy = (delta: number): void => {
+    tabScrollRef.current?.scrollBy({ left: delta, behavior: 'smooth' })
+  }
 
   if (state.phase === 'loading') return <p className={css.status}>{t('loading')}</p>
   if (state.phase === 'error') {
@@ -212,42 +246,87 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
               onChange={(event) => { setQuery(event.currentTarget.value) }}
             />
           </label>
-          <div className={css.tabs} role="tablist" aria-label={t('tabs')}>
-            {dimensions.map((dimension, index) => {
-              const selected = dimension.id === active
-              return (
-                <button
-                  key={dimension.id}
-                  ref={(element) => { tabRefs.current[index] = element }}
-                  id={`${tabsId}-tab-${dimension.id}`}
-                  type="button"
-                  role="tab"
-                  className={css.tab}
-                  aria-selected={selected}
-                  aria-controls={`${tabsId}-panel-${dimension.id}`}
-                  data-active={selected ? 'true' : undefined}
-                  tabIndex={selected ? 0 : -1}
-                  onClick={() => { setActiveId(dimension.id) }}
-                  onKeyDown={(event) => {
-                    let nextIndex: number
-                    switch (event.key) {
-                      case 'ArrowRight': nextIndex = (index + 1) % dimensions.length; break
-                      case 'ArrowLeft': nextIndex = (index - 1 + dimensions.length) % dimensions.length; break
-                      case 'Home': nextIndex = 0; break
-                      case 'End': nextIndex = dimensions.length - 1; break
-                      default: return
-                    }
-                    event.preventDefault()
-                    const next = dimensions[nextIndex] as DimensionView
-                    const nextTab = tabRefs.current[nextIndex] as HTMLButtonElement
-                    setActiveId(next.id)
-                    nextTab.focus()
-                  }}
-                >
-                  {dimension.title}
-                </button>
-              )
-            })}
+          <div
+            className={css.tabArea}
+            onMouseEnter={() => { setHovered(true) }}
+            onMouseLeave={() => { setHovered(false) }}
+          >
+            <div className={css.tabRow}>
+              <button
+                type="button"
+                className={css.scrollArrow}
+                aria-label={t('scrollLeft')}
+                disabled={scrollState.left <= 0}
+                onClick={() => { scrollBy(-220) }}
+              >
+                <IconChevronLeftOutline14 aria-hidden="true" />
+              </button>
+              <div
+                ref={tabScrollRef}
+                className={css.tabScroll}
+                onScroll={updateScroll}
+              >
+                <div className={css.tabs} role="tablist" aria-label={t('tabs')}>
+                  {dimensions.map((dimension, index) => {
+                    const selected = dimension.id === active
+                    return (
+                      <button
+                        key={dimension.id}
+                        ref={(element) => { tabRefs.current[index] = element }}
+                        id={`${tabsId}-tab-${dimension.id}`}
+                        type="button"
+                        role="tab"
+                        className={css.tab}
+                        aria-selected={selected}
+                        aria-controls={`${tabsId}-panel-${dimension.id}`}
+                        data-active={selected ? 'true' : undefined}
+                        tabIndex={selected ? 0 : -1}
+                        onClick={() => { setActiveId(dimension.id) }}
+                        onKeyDown={(event) => {
+                          let nextIndex: number
+                          switch (event.key) {
+                            case 'ArrowRight': nextIndex = (index + 1) % dimensions.length; break
+                            case 'ArrowLeft': nextIndex = (index - 1 + dimensions.length) % dimensions.length; break
+                            case 'Home': nextIndex = 0; break
+                            case 'End': nextIndex = dimensions.length - 1; break
+                            default: return
+                          }
+                          event.preventDefault()
+                          const next = dimensions[nextIndex] as DimensionView
+                          const nextTab = tabRefs.current[nextIndex] as HTMLButtonElement
+                          setActiveId(next.id)
+                          nextTab.focus()
+                        }}
+                      >
+                        {dimension.title}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <button
+                type="button"
+                className={css.scrollArrow}
+                aria-label={t('scrollRight')}
+                disabled={scrollState.left >= scrollState.max}
+                onClick={() => { scrollBy(220) }}
+              >
+                <IconChevronRightOutline14 aria-hidden="true" />
+              </button>
+            </div>
+            <div
+              className={css.scrollbar}
+              data-visible={hovered || scrolling ? 'true' : undefined}
+              aria-hidden="true"
+            >
+              <div
+                className={css.scrollbarThumb}
+                style={{
+                  left: `${scrollState.leftPct}%`,
+                  width: `${scrollState.thumbPct}%`,
+                }}
+              />
+            </div>
           </div>
           {visible.map((dimension) => {
             const selected = dimension.id === active

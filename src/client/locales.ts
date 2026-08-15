@@ -4,6 +4,7 @@ export const NS = 'settings.skillManagement'
 const keys = [
   'nav', 'title', 'intro', 'tabs', 'searchPlaceholder', 'loading', 'loadError', 'retry',
   'empty', 'noWorkspaces', 'noMatches', 'dimensionError', 'enabled', 'disabled',
+  'scrollLeft', 'scrollRight',
   'sourceProjectDsh', 'sourceProjectAgents', 'sourceRuntime', 'sourceUserDsh', 'sourceUserAgents', 'sourceCustom', 'sourceBundled',
 ] as const
 
@@ -24,6 +25,8 @@ export const en: Record<SkillManagementKey, string> = {
   dimensionError: 'This workspace catalog could not be loaded.',
   enabled: 'Enabled',
   disabled: 'Disabled',
+  scrollLeft: 'Scroll workspaces left',
+  scrollRight: 'Scroll workspaces right',
   sourceProjectDsh: 'Workspace',
   sourceProjectAgents: 'Workspace',
   sourceRuntime: 'Runtime',
@@ -48,6 +51,8 @@ export const zh: Record<SkillManagementKey, string> = {
   dimensionError: '该工作区的技能目录加载失败。',
   enabled: '已启用',
   disabled: '已禁用',
+  scrollLeft: '向左滚动工作区',
+  scrollRight: '向右滚动工作区',
   sourceProjectDsh: '工作区',
   sourceProjectAgents: '工作区',
   sourceRuntime: '运行时',

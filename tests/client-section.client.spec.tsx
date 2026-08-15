@@ -82,7 +82,7 @@ describe('SkillManagementSection', () => {
     root.unmount()
   })
 
-  it('writes a workspace toggle for a project skill and a user toggle for a user skill', async () => {
+  it('writes the target state for a workspace toggle and a user toggle', async () => {
     const setSkillDisabled = vi.fn(async () => {})
     const load = vi.fn(async () => fixture)
     const { root, container } = mount({ setSkillDisabled, load } as never)
@@ -90,21 +90,23 @@ describe('SkillManagementSection', () => {
     const switches = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')]
     const projectSwitch = switches.find(s => s.getAttribute('aria-label')?.includes('project-skill'))!
     await act(async () => { projectSwitch.click() })
+    // Clicking an enabled switch writes the TARGET state (disable).
     expect(setSkillDisabled).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'workspace',
       workspaceId: 'w1',
       name: 'project-skill',
-      enabled: true,
+      enabled: false,
     }))
     // The reload after the first write replaces the DOM; re-query before the
     // second click.
     const reloadedSwitches = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')]
     const userSwitch = reloadedSwitches.find(s => s.getAttribute('aria-label')?.includes('disabled-skill'))!
     await act(async () => { userSwitch.click() })
+    // Clicking a disabled switch writes the TARGET state (re-enable).
     expect(setSkillDisabled).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'user',
       name: 'disabled-skill',
-      enabled: false,
+      enabled: true,
     }))
     // Each successful write reloads the catalog.
     expect(load).toHaveBeenCalledTimes(3)
@@ -119,6 +121,25 @@ describe('SkillManagementSection', () => {
     await act(async () => { second.click() })
     expect(container.textContent).toContain('find-docs')
     expect(container.textContent).toContain('find-skills')
+    root.unmount()
+  })
+
+  it('renders scroll arrows and shows the overlay scrollbar only while scrolling', async () => {
+    const { root, container } = mount({})
+    await act(async () => {})
+    // jsdom reports zero scroll width, so both arrows start disabled.
+    const left = container.querySelector<HTMLButtonElement>('button[aria-label="scrollLeft"]')!
+    const right = container.querySelector<HTMLButtonElement>('button[aria-label="scrollRight"]')!
+    expect(left.disabled).toBe(true)
+    expect(right.disabled).toBe(true)
+    // The overlay scrollbar is hidden until the strip actually scrolls.
+    const bar = container.querySelector<HTMLDivElement>('div[aria-hidden="true"]')!
+    expect(bar.getAttribute('data-visible')).toBeNull()
+    const tabScroll = container.querySelector<HTMLElement>('[role="tablist"]')!.parentElement!
+    await act(async () => {
+      tabScroll.dispatchEvent(new Event('scroll'))
+    })
+    expect(bar.getAttribute('data-visible')).toBe('true')
     root.unmount()
   })
 

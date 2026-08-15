@@ -65,13 +65,68 @@
   clip-path: inset(50%);
 }
 
+/* Tab strip: arrow buttons around a single-line scroll container. The strip
+   is 1px taller than the old flex-wrap row so arrows + tabs stay on one line
+   no matter how many workspaces exist. */
+.tabArea {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.tabRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scrollArrow {
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  padding: 5px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.scrollArrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.scrollArrow:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.scrollArrow:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.tabScroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.tabScroll::-webkit-scrollbar {
+  display: none;
+}
+
 .tabs {
   display: flex;
   align-items: flex-end;
   gap: 22px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  margin-top: 2px;
-  flex-wrap: wrap;
+  width: max-content;
 }
 
 .tab {
@@ -112,6 +167,33 @@
   outline-offset: 2px;
   border-radius: 2px;
   color: var(--dsw-alias-label-primary);
+}
+
+/* Overlay scrollbar: absolutely positioned below the strip, so showing and
+   hiding it never shifts the layout. Visible while scrolling or hovering the
+   tab area, hidden otherwise. */
+.scrollbar {
+  position: absolute;
+  left: 30px;
+  right: 30px;
+  bottom: -2px;
+  height: 3px;
+  border-radius: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+}
+
+.scrollbar[data-visible='true'] {
+  opacity: 1;
+}
+
+.scrollbarThumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: var(--dsw-alias-label-tertiary);
 }
 
 .panel {
