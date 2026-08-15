@@ -37,23 +37,23 @@ State persists in the settings document (`ui-settings-skills.policy` namespace),
    pnpm run typecheck
    pnpm test
    pnpm run build
-   npm pack          # ui-settings-skills-0.1.1.tgz
+   npm pack          # dsh-client-ui-settings-skills-0.1.1.tgz
    ```
 
 2. Install the package into your profile:
 
    ```sh
-   dsh plugin --profile web add ./ui-settings-skills-0.1.1.tgz
+   dsh plugin --profile web add ./dsh-client-ui-settings-skills-0.1.1.tgz
    ```
 
-   (or from the profile directory: `corepack pnpm add ./ui-settings-skills-0.1.1.tgz --dir <profile-dir>`)
+   (or from the profile directory: `corepack pnpm add ./dsh-client-ui-settings-skills-0.1.1.tgz --dir <profile-dir>`)
 
 3. Mount it in `$DSH_HOME/profiles/<name>/cordis.patch.yml`:
 
    ```yaml
    - insert:
-       - id: ui-settings-skills
-         name: ui-settings-skills
+       - id: ui-settings-skills              # plugin id (unchanged)
+         name: dsh-client-ui-settings-skills # npm package name
    ```
 
 4. Restart the profile and open Settings → **技能 / Skills**.

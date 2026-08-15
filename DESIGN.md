@@ -54,8 +54,8 @@
 dsh plugin --profile web add <本地路径或 tarball 或 git>
 
 # 2) 在 $DSH_HOME/profiles/web/cordis.patch.yml（用户自有文件）insert 一行：
-#    - id: ui-settings-skills
-#      name: '<插件包名>'
+#    - id: ui-settings-skills            # 插件 id（不变，宿主 cordis 身份）
+#      name: dsh-client-ui-settings-skills  # npm 包名（loader 模块解析 + client-modules 条目 id）
 ```
 
 要点：

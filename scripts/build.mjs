@@ -14,7 +14,11 @@ import { basename, resolve } from 'node:path'
 import { build } from 'esbuild'
 import { transform } from 'lightningcss'
 
-const PKG_ID = 'ui-settings-skills'
+// Client-modules entry id — the npm package name (client-modules keys the boot
+// graph, /plugins/<id>/client.js route and __ModuleLoader__ registration by the
+// loader entry's package name). NOT the cordis plugin id, which stays
+// 'ui-settings-skills' (exported `name` in src/index.ts).
+const PKG_ID = 'dsh-client-ui-settings-skills'
 
 /** The browser module table the shell seeds (harness PLATFORM_MODULES). */
 const PLATFORM_MODULES = [
