@@ -16,7 +16,7 @@ const fixture: CatalogResponse = {
       id: 'w1',
       title: 'One',
       skills: [
-        { name: 'global-skill', description: 'a global skill', source: 'bundled', provider: 'skill-filesystem', modelInvocable: true, userInvocable: true },
+        { name: 'global-skill', description: 'a global skill', source: 'project-dsh', provider: 'skill-filesystem', modelInvocable: true, userInvocable: true },
         { name: 'project-skill', description: 'a project skill with a long description that would wrap over several lines', source: 'project-agents', provider: 'skill-filesystem', modelInvocable: false, userInvocable: true },
         { name: 'disabled-skill', description: 'a disabled user skill', source: 'user-agents', provider: 'ui-settings-skills-policy', modelInvocable: false, userInvocable: false, disabled: true, disabledScope: 'user' },
       ],
@@ -60,7 +60,7 @@ describe('SkillManagementSection', () => {
     // The active workspace's rows; the source badge renders the localized key
     // (the test translator is the identity) instead of the raw source value.
     expect(container.textContent).toContain('global-skill')
-    expect(container.textContent).toContain('sourceBundled')
+    expect(container.textContent).toContain('sourceProjectDsh')
     expect(container.textContent).toContain('project-skill')
     expect(container.textContent).toContain('sourceProjectAgents')
     expect(container.textContent).not.toContain('project-agents')

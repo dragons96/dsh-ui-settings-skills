@@ -5,10 +5,11 @@ A dsh plugin that adds a **Skill management** page to Web Settings, organized by
 ## Features
 
 - One tab per workspace, with global and user-level skills folded into every workspace view
+- **Manages only user-level skills (`~/.agents/skills`) and project skills** — preset-loaded (`custom`) and built-in skills are never shown or toggled
 - Search box that filters skills by name or description
-- Localized scope badges on every row (用户 / User, 工作区 / Workspace, 运行时 / Runtime, 自定义 / Custom, 内置 / Bundled)
+- Localized scope badges on every row (用户 / User, 工作区 / Workspace)
 - Skill descriptions clamp to two lines, with the full text shown on hover
-- **Enable/disable toggles**: switching a skill off hides it from the model catalog, the `/name` injection boundary, and the ui-skill `/` menu — everywhere `ctx.skills` is read. User-level skills (`~/.agents/skills`) toggle globally; project skills toggle per workspace. State persists in the settings document.
+- **Enable/disable toggles**: switching a skill off hides it from the model catalog, the `/name` injection boundary, and the ui-skill `/` menu — everywhere `ctx.skills` is read. User-level skills toggle globally; project skills toggle per workspace. State persists in the settings document.
 
 ## Enforcing toggles
 

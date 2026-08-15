@@ -65,7 +65,7 @@ describe('buildCatalog', () => {
   it('returns one dimension per workspace, folding global, user-level, per-cwd, and live-session rows', async () => {
     const skills = reader(options => {
       if (options === undefined) return [mkSkill('global-a'), mkSkill('user-skill', { source: 'user-agents' })]
-      if (options.scope === scopeA) return [mkSkill('scope-skill', { source: 'custom' }), mkSkill('user-skill', { source: 'user-agents' }), mkSkill('shared')]
+      if (options.scope === scopeA) return [mkSkill('scope-skill', { source: 'project-agents' }), mkSkill('user-skill', { source: 'user-agents' }), mkSkill('shared')]
       if (options.scope === scopeB) return [mkSkill('user-skill-2', { source: 'user-agents' })]
       if (options.cwd === 'C:\\proj\\one') return [mkSkill('global-one-skill')]
       return [mkSkill('global-two-skill')]
@@ -93,6 +93,24 @@ describe('buildCatalog', () => {
     expect(snapshot.mock.calls[3]).toEqual([{ cwd: 'C:\\proj\\one' }])
     expect(snapshot.mock.calls[4]).toEqual([{ scope: scopeA, cwd: 'C:\\proj\\one' }])
     expect(snapshot.mock.calls[5]).toEqual([{ cwd: 'C:\\proj\\two' }])
+  })
+
+  it('drops preset-loaded (custom) and built-in (bundled) skills from every view', async () => {
+    const skills = reader(options => {
+      if (options === undefined) return [mkSkill('custom-skill', { source: 'custom' }), mkSkill('bundled-skill', { source: 'bundled' }), mkSkill('user-skill', { source: 'user-agents' })]
+      if (options?.cwd === 'C:\\proj\\one') return [mkSkill('project-skill'), mkSkill('runtime-skill', { source: 'runtime' })]
+      return []
+    })
+    const dimensions = await buildCatalog(skills, new Map(), workspaces)
+
+    for (const dimension of dimensions) {
+      const names = dimension.skills.map(s => s.name)
+      expect(names).not.toContain('custom-skill')
+      expect(names).not.toContain('bundled-skill')
+      expect(names).not.toContain('runtime-skill')
+      expect(names).toContain('user-skill')
+    }
+    expect(dimensions[0]?.skills.map(s => s.name)).toEqual(['project-skill', 'user-skill'])
   })
 
   it('unions every live session of a workspace, deduped by name', async () => {

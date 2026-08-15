@@ -50,6 +50,9 @@ export const Config = z.object({
 /** Route prefix under which the plugin serves its API. */
 export const API_PREFIX = '/plugin/settings-skills'
 
+/** Skill sources the page manages: the user's own skills and project skills. Preset-loaded skills (`custom`) and built-ins are not managed and never shown. */
+const VISIBLE_SOURCES = new Set(['user-agents', 'user-dsh', 'project-dsh', 'project-agents'])
+
 /** User-level skill sources (the current user's own skills). */
 const USER_LEVEL_SOURCES = new Set(['user-agents', 'user-dsh'])
 
@@ -102,9 +105,9 @@ function mergeRows(...batches: readonly SkillRow[][]): SkillRow[] {
   return [...merged.values()].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
 }
 
-/** Filter out the policy stub rows (the page renders them from the policy instead). */
-function withoutStubs(rows: readonly SkillRow[]): SkillRow[] {
-  return rows.filter(row => row.provider !== POLICY_PROVIDER)
+/** Filter to the managed sources, dropping policy stub rows and preset/built-in skills. */
+function visibleRows(rows: readonly SkillRow[]): SkillRow[] {
+  return rows.filter(row => row.provider !== POLICY_PROVIDER && VISIBLE_SOURCES.has(row.source))
 }
 
 /** The disabled rows for one workspace: user-level entries plus the workspace's own. */
@@ -160,7 +163,7 @@ export async function buildCatalog(
   workspaces: readonly WorkspaceRow[],
   policy: SkillPolicy = { user: {}, workspace: {} },
 ): Promise<DimensionView[]> {
-  const globalRows = withoutStubs((await skills.snapshot()).skills.map(toSkillRow))
+  const globalRows = visibleRows((await skills.snapshot()).skills.map(toSkillRow))
   const userLevelRows: SkillRow[] = []
   for (const row of globalRows) {
     if (USER_LEVEL_SOURCES.has(row.source)) userLevelRows.push(row)
@@ -168,7 +171,7 @@ export async function buildCatalog(
   const agents = [...agentsBySession.values()]
   for (const agent of agents) {
     try {
-      for (const row of withoutStubs((await skills.snapshot({ scope: agent.scope })).skills.map(toSkillRow))) {
+      for (const row of visibleRows((await skills.snapshot({ scope: agent.scope })).skills.map(toSkillRow))) {
         if (USER_LEVEL_SOURCES.has(row.source)) userLevelRows.push(row)
       }
     } catch {
@@ -184,13 +187,13 @@ export async function buildCatalog(
         userRows,
         // The global layer's per-cwd view (host-plane providers; the web-app
         // bundle disables them, so this batch is empty there).
-        withoutStubs((await skills.snapshot({ cwd: workspace.path })).skills.map(toSkillRow)),
+        visibleRows((await skills.snapshot({ cwd: workspace.path })).skills.map(toSkillRow)),
       ]
       for (const sessionId of workspace.sessionIds) {
         const agent = agentsBySession.get(sessionId)
         if (agent === undefined) continue
         try {
-          scopedRows.push(withoutStubs((await skills.snapshot({ scope: agent.scope, cwd: workspace.path })).skills.map(toSkillRow)))
+          scopedRows.push(visibleRows((await skills.snapshot({ scope: agent.scope, cwd: workspace.path })).skills.map(toSkillRow)))
         } catch {
           // One session's scope failure must not fail the whole workspace.
         }
