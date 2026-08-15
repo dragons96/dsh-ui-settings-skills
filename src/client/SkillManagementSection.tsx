@@ -1,0 +1,225 @@
+/**
+ * Skill management settings page: one tab per workspace (global and user-level
+ * skills are already folded in by the host), a name search over the active
+ * workspace's rows, and per-skill localized scope badges. Descriptions clamp
+ * to two lines and answer a hover with the full text when actually cut off.
+ */
+
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { Tooltip, IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { CatalogResponse, DimensionView, SkillRow } from '../wire.ts'
+import { sourceLabelKey, type SkillManagementKey } from './locales.ts'
+import css from './SkillManagementSection.module.css'
+
+/** Registration-side business face for the management page. */
+export interface SkillManagementSectionInjected {
+  /** Read the full catalog; called when the section first renders. */
+  load: () => Promise<CatalogResponse>
+}
+
+/** Full component props. */
+export type SkillManagementSectionProps =
+  PropsRuntime<'settings.section'>
+  & PropsLocale<'settings.skillManagement'>
+  & InjectFace<SkillManagementSectionInjected>
+
+type PageState =
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'ready'; readonly catalog: CatalogResponse }
+  | { readonly phase: 'error'; readonly message: string }
+
+/**
+ * The description, clamped by CSS to two lines and offered in full on hover.
+ * The tooltip is attached only while the text is actually cut off, so a short
+ * description does not answer a hover with a bubble repeating the row.
+ * @param description - the skill description.
+ * @returns the description element, tooltip-anchored while it overflows.
+ */
+function ClampedDescription({ description }: { description: string }): ReactNode {
+  const ref = useRef<HTMLSpanElement | null>(null)
+  const [truncated, setTruncated] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el === null) return
+    const measure = () => { setTruncated(el.scrollHeight > el.clientHeight) }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => { observer.disconnect() }
+  }, [description])
+  return (
+    <Tooltip label={description} side="bottom" delayMs={400} disabled={!truncated} maxWidth={360}>
+      {/* The empty title stops the native tooltip from climbing to this span. */}
+      <span ref={ref} className={css.rowDesc} title="">{description}</span>
+    </Tooltip>
+  )
+}
+
+/**
+ * The localized scope label for one skill source; unknown sources show
+ * verbatim.
+ * @param source - the wire source value.
+ * @param t - the bound locale translator.
+ * @returns the display label.
+ */
+function sourceLabel(source: string, t: (key: SkillManagementKey) => string): string {
+  const key = sourceLabelKey(source)
+  return key === undefined ? source : t(key)
+}
+
+/** Render one skill row with its right-aligned scope badge. */
+function SkillRowView({ row, t }: { row: SkillRow; t: (key: SkillManagementKey) => string }): ReactNode {
+  return (
+    <li className={css.row}>
+      <div className={css.rowHead}>
+        <span className={css.rowName}>{row.name}</span>
+        <span className={css.badge}>{sourceLabel(row.source, t)}</span>
+      </div>
+      <ClampedDescription description={row.description} />
+    </li>
+  )
+}
+
+/** Filter one workspace's rows by the current search query (name or description). */
+function filterRows(dimension: DimensionView, query: string): readonly SkillRow[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return dimension.skills
+  return dimension.skills.filter(row =>
+    row.name.toLowerCase().includes(needle) || row.description.toLowerCase().includes(needle),
+  )
+}
+
+/**
+ * Render the Skill management section content column: workspace tabs, a name
+ * search, and the active workspace's skill rows.
+ * @param props - composed slot props.
+ * @returns the section with loading/error/ready states.
+ */
+export function SkillManagementSection(props: SkillManagementSectionProps): ReactNode {
+  const { t, load } = props
+  const [state, setState] = useState<PageState>({ phase: 'loading' })
+  const [attempt, setAttempt] = useState(0)
+  const [activeId, setActiveId] = useState<string>()
+  const [visitedIds, setVisitedIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [query, setQuery] = useState('')
+  const tabsId = useId()
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  useEffect(() => {
+    let cancelled = false
+    setState({ phase: 'loading' })
+    void load().then(
+      (catalog) => { if (!cancelled) setState({ phase: 'ready', catalog }) },
+      (error: unknown) => {
+        if (!cancelled) setState({ phase: 'error', message: error instanceof Error ? error.message : String(error) })
+      },
+    )
+    return () => { cancelled = true }
+  }, [load, attempt])
+
+  if (state.phase === 'loading') return <p className={css.status}>{t('loading')}</p>
+  if (state.phase === 'error') {
+    return (
+      <div className={css.section} role="alert">
+        <h2 className={css.heading}>{t('title')}</h2>
+        <p className={css.error}>{t('loadError')}</p>
+        <p className={css.errorDetail}>{state.message}</p>
+        <button type="button" className={css.secondaryButton} onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</button>
+      </div>
+    )
+  }
+
+  const dimensions = state.catalog.dimensions
+  const active = dimensions.find(dimension => dimension.id === activeId)?.id ?? dimensions[0]?.id
+  const visible = dimensions.filter(dimension => dimension.id === active || visitedIds.has(dimension.id))
+
+  return (
+    <div className={css.section}>
+      <h2 className={css.heading}>{t('title')}</h2>
+      <p className={css.intro}>{t('intro')}</p>
+      {dimensions.length === 0 ? <p className={css.empty}>{t('noWorkspaces')}</p> : (
+        <>
+          <label className={css.search}>
+            <IconSearchOutline16 aria-hidden="true" />
+            <span className={css.visuallyHidden}>{t('searchPlaceholder')}</span>
+            <input
+              type="search"
+              value={query}
+              placeholder={t('searchPlaceholder')}
+              aria-label={t('searchPlaceholder')}
+              spellCheck={false}
+              onChange={(event) => { setQuery(event.currentTarget.value) }}
+            />
+          </label>
+          <div className={css.tabs} role="tablist" aria-label={t('tabs')}>
+            {dimensions.map((dimension, index) => {
+              const selected = dimension.id === active
+              return (
+                <button
+                  key={dimension.id}
+                  ref={(element) => { tabRefs.current[index] = element }}
+                  id={`${tabsId}-tab-${dimension.id}`}
+                  type="button"
+                  role="tab"
+                  className={css.tab}
+                  aria-selected={selected}
+                  aria-controls={`${tabsId}-panel-${dimension.id}`}
+                  data-active={selected ? 'true' : undefined}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => { setActiveId(dimension.id) }}
+                  onKeyDown={(event) => {
+                    let nextIndex: number
+                    switch (event.key) {
+                      case 'ArrowRight': nextIndex = (index + 1) % dimensions.length; break
+                      case 'ArrowLeft': nextIndex = (index - 1 + dimensions.length) % dimensions.length; break
+                      case 'Home': nextIndex = 0; break
+                      case 'End': nextIndex = dimensions.length - 1; break
+                      default: return
+                    }
+                    event.preventDefault()
+                    const next = dimensions[nextIndex] as DimensionView
+                    const nextTab = tabRefs.current[nextIndex] as HTMLButtonElement
+                    setActiveId(next.id)
+                    nextTab.focus()
+                  }}
+                >
+                  {dimension.title}
+                </button>
+              )
+            })}
+          </div>
+          {visible.map((dimension) => {
+            const selected = dimension.id === active
+            return (
+              <div
+                key={dimension.id}
+                id={`${tabsId}-panel-${dimension.id}`}
+                className={css.panel}
+                role="tabpanel"
+                aria-labelledby={`${tabsId}-tab-${dimension.id}`}
+                hidden={!selected}
+              >
+                {dimension.error !== undefined
+                  ? <p className={css.error} role="alert">{t('dimensionError')}</p>
+                  : (() => {
+                    const rows = filterRows(dimension, query)
+                    if (rows.length === 0) {
+                      return <p className={css.empty}>{query.trim() === '' ? t('empty') : t('noMatches')}</p>
+                    }
+                    return (
+                      <ul className={css.list}>
+                        {rows.map(row => <SkillRowView key={row.name} row={row} t={t} />)}
+                      </ul>
+                    )
+                  })()}
+              </div>
+            )
+          })}
+        </>
+      )}
+    </div>
+  )
+}

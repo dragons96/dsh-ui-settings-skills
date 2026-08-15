@@ -1,0 +1,18 @@
+# Dependencies and build outputs
+node_modules/
+lib/
+dist/
+
+# Packed artifacts
+*.tgz
+
+# Logs and OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Tooling residue
+coverage/
+*.tsbuildinfo
+.eslintcache
+.scratch/
