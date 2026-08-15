@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { SkillManagementSection, type SkillManagementSectionProps } from '../src/client/SkillManagementSection.tsx'
 import { en, sourceLabelKey, zh } from '../src/client/locales.ts'
-import type { CatalogResponse } from '../src/wire.ts'
+import type { CatalogResponse, SkillRow } from '../src/wire.ts'
 
 // React 18 act() requires the environment flag when driving a real root.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -98,7 +98,7 @@ describe('SkillManagementSection', () => {
     root.unmount()
   })
 
-  it('writes the target state for a workspace toggle and a user toggle', async () => {
+  it('writes the target state and updates rows locally without reloading', async () => {
     const setSkillDisabled = vi.fn(async () => {})
     const load = vi.fn(async () => fixture)
     const { root, container } = mount({ setSkillDisabled, load } as never)
@@ -113,19 +113,57 @@ describe('SkillManagementSection', () => {
       name: 'project-skill',
       enabled: false,
     }))
-    // The reload after the first write replaces the DOM; re-query before the
-    // second click.
-    const reloadedSwitches = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')]
-    const userSwitch = reloadedSwitches.find(s => s.getAttribute('aria-label')?.includes('disabled-skill'))!
+    // The row flips locally; no catalog reload happens.
+    expect(projectSwitch.getAttribute('aria-checked')).toBe('false')
+    expect(load).toHaveBeenCalledTimes(1)
+    // Clicking the now-disabled switch writes the TARGET state (re-enable).
+    await act(async () => { projectSwitch.click() })
+    expect(setSkillDisabled).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'workspace',
+      workspaceId: 'w1',
+      name: 'project-skill',
+      enabled: true,
+    }))
+    expect(projectSwitch.getAttribute('aria-checked')).toBe('true')
+    expect(load).toHaveBeenCalledTimes(1)
+    // A user-level toggle writes without a workspaceId and flips its row.
+    const userSwitch = switches.find(s => s.getAttribute('aria-label')?.includes('disabled-skill'))!
     await act(async () => { userSwitch.click() })
-    // Clicking a disabled switch writes the TARGET state (re-enable).
     expect(setSkillDisabled).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'user',
       name: 'disabled-skill',
       enabled: true,
     }))
-    // Each successful write reloads the catalog.
-    expect(load).toHaveBeenCalledTimes(3)
+    expect(userSwitch.getAttribute('aria-checked')).toBe('true')
+    expect(load).toHaveBeenCalledTimes(1)
+    root.unmount()
+  })
+
+  it('a user-level toggle flips the same skill in every workspace', async () => {
+    const shared: SkillRow = {
+      name: 'shared-skill', description: 'shared', source: 'user-agents', provider: 'skill-filesystem',
+      modelInvocable: true, userInvocable: true,
+    }
+    const setSkillDisabled = vi.fn(async () => {})
+    const { root, container } = mount({
+      setSkillDisabled,
+      load: async () => ({
+        dimensions: [
+          { kind: 'workspace', id: 'w1', title: 'One', skills: [shared] },
+          { kind: 'workspace', id: 'w2', title: 'Two', skills: [{ ...shared }] },
+        ],
+      }),
+    } as never)
+    await act(async () => {})
+    const first = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')][0]!
+    await act(async () => { first.click() })
+    expect(first.getAttribute('aria-checked')).toBe('false')
+    // Switch to the second workspace: its copy of the skill is off too.
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    const second = tabs.find(tab => tab.textContent === 'Two')!
+    await act(async () => { second.click() })
+    const secondSwitch = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')][0]!
+    expect(secondSwitch.getAttribute('aria-checked')).toBe('false')
     root.unmount()
   })
 

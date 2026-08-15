@@ -11,11 +11,11 @@
  * and per workspace); rank-0 shadowing providers replace them with stubs so
  * every `ctx.skills` consumer (model catalog, `/name` injection, the ui-skill
  * menu RPC) stops seeing them, and the catalog marks them disabled so the
- * page renders the toggle off. The stub is mounted at the global layer and,
- * through each live agent's scoped context, inside every agent's scope layer,
- * so both host-provider compositions (TUI/headless) and web compositions
- * (providers behind agent presets) are covered. The browser never submits a
- * raw path.
+ * page renders the toggle off. The stub is mounted on the global registry
+ * and, through each live agent, on the agent's own preset registry when the
+ * preset composes one — both host-provider compositions (TUI/headless) and
+ * web compositions (providers behind agent presets) are covered. The browser
+ * never submits a raw path.
  *
  * @module ui-settings-skills
  */
@@ -359,21 +359,54 @@ export function apply(ctx: Context, config: { role?: string } = {}): void {
   }
 
   let invalidatePolicy = (): void => {}
+  // Every registration's invalidation control (global instance plus one per
+  // live agent's preset registry); WeakRefs let a disposed agent's closure be
+  // collected. A stale control is a no-op, but dropping it keeps the set from
+  // growing across agent lifecycles.
+  const invalidators = new Set<WeakRef<() => void>>()
+  const fireInvalidators = (): void => {
+    for (const ref of invalidators) {
+      const invalidate = ref.deref()
+      if (invalidate === undefined) invalidators.delete(ref)
+      else invalidate()
+    }
+  }
   ctx.effect(() => skills.registerProvider((control) => {
-    invalidatePolicy = () => control.invalidate()
+    invalidators.add(new WeakRef(control.invalidate))
+    invalidatePolicy = fireInvalidators
     return createPolicyProvider(ctx, () => readPolicy(ctx))
   }), 'ui-settings-skills: policy provider')
 
-  // The global-layer provider alone cannot shadow web compositions, where
-  // every agent preset keeps its skill providers in the agent's scoped layer.
-  // Mount the same provider through each live agent's scoped context so the
-  // registry files it into that agent's layer; it unwinds with the agent.
-  // A failing mount must not veto agent publication, so it is contained here.
+  // A global-layer provider alone cannot shadow web compositions: the ui-skill
+  // `/` menu and the model catalog read the agent preset's OWN SkillRegistry
+  // (isolated behind the preset's realm), where a global registry cannot win.
+  // Mount the provider both on the global registry's agent layer
+  // (TUI/headless) and — when the agent's preset composes its own registry —
+  // directly on that registry, whose context carries the agent's scope tag so
+  // the stub files into the same layer as the preset's real providers. A
+  // failing mount must not veto agent publication, so it is contained here.
+  type PolicyControl = { invalidate: () => void }
+  type PolicyRegisterable = { registerProvider?: (create: (control: PolicyControl) => unknown) => () => void }
+  const presets = ctx.get('agentPresets') as { serviceFor?: (agent: unknown, name: string) => PolicyRegisterable | undefined } | undefined
   const mountScopeProvider = (agent: { readonly ctx: Context }): void => {
-    agent.ctx.effect(
-      () => agent.ctx.skills.registerProvider((control) => createPolicyProvider(agent.ctx, () => readPolicy(ctx))),
-      'ui-settings-skills: scoped policy provider',
-    )
+    agent.ctx.effect(() => {
+      const disposers: Array<() => void> = [
+        agent.ctx.skills.registerProvider((control) => {
+          invalidators.add(new WeakRef(control.invalidate))
+          return createPolicyProvider(agent.ctx, () => readPolicy(ctx))
+        }),
+      ]
+      const presetRegistry = presets?.serviceFor?.(agent, 'skills')
+      if (presetRegistry?.registerProvider !== undefined) {
+        disposers.push(presetRegistry.registerProvider((control) => {
+          invalidators.add(new WeakRef(control.invalidate))
+          return createPolicyProvider(agent.ctx, () => readPolicy(ctx))
+        }))
+      }
+      return () => {
+        for (const dispose of disposers) dispose()
+      }
+    }, 'ui-settings-skills: scoped policy provider')
   }
   const mountAllScoped = (): void => {
     for (const agent of ctx.agents.list()) {

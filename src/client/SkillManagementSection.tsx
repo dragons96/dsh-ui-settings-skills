@@ -87,17 +87,18 @@ function policyKindOf(row: SkillRow): 'user' | 'workspace' {
  * @param t - the bound locale translator.
  * @param workspaceId - the owning workspace (for workspace-kind toggles).
  * @param setSkillDisabled - the policy write face.
- * @param onChanged - called after a successful write so the page reloads.
+ * @param onToggled - called after a successful write with the target state so
+ *   the page updates the row locally instead of reloading the catalog.
  * @returns the row.
  */
 function SkillRowView({
-  row, t, workspaceId, setSkillDisabled, onChanged,
+  row, t, workspaceId, setSkillDisabled, onToggled,
 }: {
   row: SkillRow
   t: (key: SkillManagementKey) => string
   workspaceId: string
   setSkillDisabled: (request: PutPolicyRequest) => Promise<void>
-  onChanged: () => void
+  onToggled: (name: string, kind: 'user' | 'workspace', enabled: boolean) => void
 }): ReactNode {
   const [saving, setSaving] = useState(false)
   const enabled = row.disabled !== true
@@ -106,17 +107,18 @@ function SkillRowView({
     setSaving(true)
     try {
       const kind = policyKindOf(row)
+      // The write carries the TARGET state: clicking an enabled switch
+      // disables the skill, clicking a disabled one re-enables it.
+      const target = !enabled
       await setSkillDisabled({
         kind,
         ...(kind === 'workspace' ? { workspaceId } : {}),
         name: row.name,
         description: row.description,
         source: row.source,
-        // The write carries the TARGET state: clicking an enabled switch
-        // disables the skill, clicking a disabled one re-enables it.
-        enabled: !enabled,
+        enabled: target,
       })
-      onChanged()
+      onToggled(row.name, kind, target)
     } finally {
       setSaving(false)
     }
@@ -213,6 +215,38 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
 
   const scrollBy = (delta: number): void => {
     tabScrollRef.current?.scrollBy({ left: delta, behavior: 'smooth' })
+  }
+
+  /**
+   * Apply one successful toggle locally: a user-level toggle flips the skill
+   * in every workspace, a workspace toggle only in the active one. The page
+   * keeps its loaded catalog; the next reload reconciles with the server.
+   * @param name - the toggled skill name.
+   * @param kind - the policy scope the write used.
+   * @param enabled - the target state just written.
+   */
+  const applyToggle = (name: string, kind: 'user' | 'workspace', enabled: boolean): void => {
+    setState(prev => {
+      if (prev.phase !== 'ready') return prev
+      return {
+        ...prev,
+        catalog: {
+          ...prev.catalog,
+          dimensions: prev.catalog.dimensions.map(dimension => ({
+            ...dimension,
+            skills: dimension.skills.map(row => {
+              if (row.name !== name) return row
+              if (kind === 'workspace' && dimension.id !== active) return row
+              if (enabled) {
+                const { disabled: _disabled, disabledScope: _scope, ...rest } = row
+                return rest
+              }
+              return { ...row, disabled: true, disabledScope: kind }
+            }),
+          })),
+        },
+      }
+    })
   }
 
   if (state.phase === 'loading') return <p className={css.status}>{t('loading')}</p>
@@ -344,7 +378,7 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
                             t={t}
                             workspaceId={dimension.id}
                             setSkillDisabled={setSkillDisabled}
-                            onChanged={() => { setAttempt(value => value + 1) }}
+                            onToggled={applyToggle}
                           />
                         ))}
                       </ul>
