@@ -8,10 +8,14 @@
  * record owns the session mapping). Per-session granularity is never shown.
  *
  * M2 toggles: a settings-namespace policy records disabled skills (user level
- * and per workspace); a rank-0 shadowing provider replaces them with stubs so
+ * and per workspace); rank-0 shadowing providers replace them with stubs so
  * every `ctx.skills` consumer (model catalog, `/name` injection, the ui-skill
  * menu RPC) stops seeing them, and the catalog marks them disabled so the
- * page renders the toggle off. The browser never submits a raw path.
+ * page renders the toggle off. The stub is mounted at the global layer and,
+ * through each live agent's scoped context, inside every agent's scope layer,
+ * so both host-provider compositions (TUI/headless) and web compositions
+ * (providers behind agent presets) are covered. The browser never submits a
+ * raw path.
  *
  * @module ui-settings-skills
  */
@@ -359,6 +363,35 @@ export function apply(ctx: Context, config: { role?: string } = {}): void {
     invalidatePolicy = () => control.invalidate()
     return createPolicyProvider(ctx, () => readPolicy(ctx))
   }), 'ui-settings-skills: policy provider')
+
+  // The global-layer provider alone cannot shadow web compositions, where
+  // every agent preset keeps its skill providers in the agent's scoped layer.
+  // Mount the same provider through each live agent's scoped context so the
+  // registry files it into that agent's layer; it unwinds with the agent.
+  // A failing mount must not veto agent publication, so it is contained here.
+  const mountScopeProvider = (agent: { readonly ctx: Context }): void => {
+    agent.ctx.effect(
+      () => agent.ctx.skills.registerProvider((control) => createPolicyProvider(agent.ctx, () => readPolicy(ctx))),
+      'ui-settings-skills: scoped policy provider',
+    )
+  }
+  const mountAllScoped = (): void => {
+    for (const agent of ctx.agents.list()) {
+      try {
+        mountScopeProvider(agent)
+      } catch (error) {
+        ctx.logger.warn(`ui-settings-skills: scoped policy provider for agent "${agent.id}" failed: ${String(error)}`)
+      }
+    }
+  }
+  mountAllScoped()
+  ctx.on('agent/created', ({ agent }) => {
+    try {
+      mountScopeProvider(agent)
+    } catch (error) {
+      ctx.logger.warn(`ui-settings-skills: scoped policy provider for agent "${agent.id}" failed: ${String(error)}`)
+    }
+  })
 
   if (role !== 'host') return
 

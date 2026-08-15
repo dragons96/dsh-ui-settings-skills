@@ -9,6 +9,22 @@ import type { CatalogResponse } from '../src/wire.ts'
 // React 18 act() requires the environment flag when driving a real root.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+// jsdom has no ResizeObserver; a manually triggered fake lets tests drive the
+// tab strip's overflow measurement.
+class FakeResizeObserver {
+  static instances: FakeResizeObserver[] = []
+  constructor(private readonly callback: ResizeObserverCallback) {
+    FakeResizeObserver.instances.push(this)
+  }
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+  trigger(): void {
+    this.callback([], this as unknown as ResizeObserver)
+  }
+}
+;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = FakeResizeObserver
+
 const fixture: CatalogResponse = {
   dimensions: [
     {
@@ -124,22 +140,37 @@ describe('SkillManagementSection', () => {
     root.unmount()
   })
 
-  it('renders scroll arrows and shows the overlay scrollbar only while scrolling', async () => {
+  it('renders scroll arrows, disabled while nothing overflows', async () => {
     const { root, container } = mount({})
     await act(async () => {})
-    // jsdom reports zero scroll width, so both arrows start disabled.
+    const left = container.querySelector<HTMLButtonElement>('button[aria-label="scrollLeft"]')!
+    const right = container.querySelector<HTMLButtonElement>('button[aria-label="scrollRight"]')!
+    // jsdom reports zero scroll width, so nothing overflows and both arrows
+    // stay disabled.
+    expect(left.disabled).toBe(true)
+    expect(right.disabled).toBe(true)
+    root.unmount()
+  })
+
+  it('enables the right arrow once overflow is measured and scrolls on click', async () => {
+    const { root, container } = mount({})
+    await act(async () => {})
+    const tabScroll = container.querySelector<HTMLElement>('[role="tablist"]')!.parentElement!
+    // Simulate an overflowing strip: 500px of content in a 200px viewport.
+    Object.defineProperty(tabScroll, 'scrollWidth', { configurable: true, get: () => 500 })
+    Object.defineProperty(tabScroll, 'clientWidth', { configurable: true, get: () => 200 })
+    await act(async () => {
+      FakeResizeObserver.instances.forEach(instance => instance.trigger())
+    })
     const left = container.querySelector<HTMLButtonElement>('button[aria-label="scrollLeft"]')!
     const right = container.querySelector<HTMLButtonElement>('button[aria-label="scrollRight"]')!
     expect(left.disabled).toBe(true)
-    expect(right.disabled).toBe(true)
-    // The overlay scrollbar is hidden until the strip actually scrolls.
-    const bar = container.querySelector<HTMLDivElement>('div[aria-hidden="true"]')!
-    expect(bar.getAttribute('data-visible')).toBeNull()
-    const tabScroll = container.querySelector<HTMLElement>('[role="tablist"]')!.parentElement!
-    await act(async () => {
-      tabScroll.dispatchEvent(new Event('scroll'))
-    })
-    expect(bar.getAttribute('data-visible')).toBe('true')
+    expect(right.disabled).toBe(false)
+    // jsdom's Element lacks scrollBy; stub it on the instance.
+    const scrollBy = vi.fn()
+    ;(tabScroll as { scrollBy?: unknown }).scrollBy = scrollBy
+    await act(async () => { right.click() })
+    expect(scrollBy).toHaveBeenCalledWith({ left: 220, behavior: 'smooth' })
     root.unmount()
   })
 

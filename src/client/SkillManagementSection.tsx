@@ -170,10 +170,8 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
   const tabsId = useId()
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const tabScrollRef = useRef<HTMLDivElement | null>(null)
-  const [scrollState, setScrollState] = useState({ left: 0, max: 0, thumbPct: 100, leftPct: 0 })
-  const [scrolling, setScrolling] = useState(false)
-  const [hovered, setHovered] = useState(false)
-  const scrollTimer = useRef<number | undefined>(undefined)
+  const tabsRef = useRef<HTMLDivElement | null>(null)
+  const [scrollState, setScrollState] = useState({ left: 0, max: 0 })
 
   useEffect(() => {
     let cancelled = false
@@ -187,26 +185,31 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
     return () => { cancelled = true }
   }, [load, attempt])
 
-  // The tab strip's scroll state: an overlay scrollbar shows while scrolling
-  // or hovering the strip and hides otherwise, without shifting layout.
-  useEffect(() => () => {
-    if (scrollTimer.current !== undefined) window.clearTimeout(scrollTimer.current)
-  }, [])
-
-  const updateScroll = (): void => {
+  // Measure the tab strip's overflow after layout and whenever the tab set
+  // or the strip's size changes, so the arrows enable exactly when content
+  // is cut off and disable again once everything is visible.
+  useLayoutEffect(() => {
     const el = tabScrollRef.current
     if (el === null) return
     const max = Math.max(0, el.scrollWidth - el.clientWidth)
-    setScrollState({
-      left: el.scrollLeft,
-      max,
-      thumbPct: el.scrollWidth === 0 ? 100 : (el.clientWidth / el.scrollWidth) * 100,
-      leftPct: el.scrollWidth === 0 ? 0 : (el.scrollLeft / el.scrollWidth) * 100,
+    setScrollState(prev => {
+      const left = Math.min(prev.left, max)
+      return left === prev.left && max === prev.max ? prev : { left, max }
     })
-    setScrolling(true)
-    if (scrollTimer.current !== undefined) window.clearTimeout(scrollTimer.current)
-    scrollTimer.current = window.setTimeout(() => { setScrolling(false) }, 300)
-  }
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      const current = tabScrollRef.current
+      if (current === null) return
+      const fresh = Math.max(0, current.scrollWidth - current.clientWidth)
+      setScrollState(prev => {
+        const left = Math.min(prev.left, fresh)
+        return left === prev.left && fresh === prev.max ? prev : { left, max: fresh }
+      })
+    })
+    observer.observe(el)
+    if (tabsRef.current !== null) observer.observe(tabsRef.current)
+    return () => { observer.disconnect() }
+  }, [state])
 
   const scrollBy = (delta: number): void => {
     tabScrollRef.current?.scrollBy({ left: delta, behavior: 'smooth' })
@@ -246,11 +249,7 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
               onChange={(event) => { setQuery(event.currentTarget.value) }}
             />
           </label>
-          <div
-            className={css.tabArea}
-            onMouseEnter={() => { setHovered(true) }}
-            onMouseLeave={() => { setHovered(false) }}
-          >
+          <div className={css.tabArea}>
             <div className={css.tabRow}>
               <button
                 type="button"
@@ -264,9 +263,12 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
               <div
                 ref={tabScrollRef}
                 className={css.tabScroll}
-                onScroll={updateScroll}
+                onScroll={() => {
+                  const el = tabScrollRef.current
+                  if (el !== null) setScrollState(prev => ({ ...prev, left: Math.min(el.scrollLeft, prev.max) }))
+                }}
               >
-                <div className={css.tabs} role="tablist" aria-label={t('tabs')}>
+                <div ref={tabsRef} className={css.tabs} role="tablist" aria-label={t('tabs')}>
                   {dimensions.map((dimension, index) => {
                     const selected = dimension.id === active
                     return (
@@ -313,19 +315,6 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
               >
                 <IconChevronRightOutline14 aria-hidden="true" />
               </button>
-            </div>
-            <div
-              className={css.scrollbar}
-              data-visible={hovered || scrolling ? 'true' : undefined}
-              aria-hidden="true"
-            >
-              <div
-                className={css.scrollbarThumb}
-                style={{
-                  left: `${scrollState.leftPct}%`,
-                  width: `${scrollState.thumbPct}%`,
-                }}
-              />
             </div>
           </div>
           {visible.map((dimension) => {

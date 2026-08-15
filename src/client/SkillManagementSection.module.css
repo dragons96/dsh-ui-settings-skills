@@ -66,10 +66,9 @@
 }
 
 /* Tab strip: arrow buttons around a single-line scroll container. The strip
-   is 1px taller than the old flex-wrap row so arrows + tabs stay on one line
-   no matter how many workspaces exist. */
+   stays on one line no matter how many workspaces exist; the arrows enable
+   only while content is actually cut off. */
 .tabArea {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -167,33 +166,6 @@
   outline-offset: 2px;
   border-radius: 2px;
   color: var(--dsw-alias-label-primary);
-}
-
-/* Overlay scrollbar: absolutely positioned below the strip, so showing and
-   hiding it never shifts the layout. Visible while scrolling or hovering the
-   tab area, hidden otherwise. */
-.scrollbar {
-  position: absolute;
-  left: 30px;
-  right: 30px;
-  bottom: -2px;
-  height: 3px;
-  border-radius: 2px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .15s;
-}
-
-.scrollbar[data-visible='true'] {
-  opacity: 1;
-}
-
-.scrollbarThumb {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border-radius: 2px;
-  background: var(--dsw-alias-label-tertiary);
 }
 
 .panel {

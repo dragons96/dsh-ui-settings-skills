@@ -126,9 +126,11 @@ export function workspaceIdForCwd(ctx: Context, cwd: string | undefined): string
 
 /**
  * One shadowing provider instance: returns rank-0 stub candidates for every
- * disabled skill visible at the queried cwd. Registered at the global layer,
- * where the registry's same-layer rank tiebreak makes the stub win, and
- * `get()` returns undefined so loading a disabled skill fails everywhere.
+ * disabled skill visible at the queried cwd. Registered into the layer of the
+ * context it receives (the global layer for the host row, an agent's scope
+ * layer when mounted through `agent.ctx`), where the registry's same-layer
+ * rank tiebreak makes the stub win; `get()` returns undefined so loading a
+ * disabled skill fails everywhere.
  * @param ctx - plugin context.
  * @param policy - thunk reading the current policy (read at list time).
  * @returns the provider.
