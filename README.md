@@ -2,7 +2,7 @@
 
 Out-of-tree dsh plugin: a **Skill management** page in Web Settings — one tab per workspace (global and user-level skills folded in), a search box, and per-skill localized scope badges.
 
-No deepseek-harness source is modified: the plugin is a dual-face npm package (node half + `dsh.client` browser half) installed into a profile and mounted by that profile's own `cordis.patch.yml`. Design rationale lives in [DESIGN.md](DESIGN.md).
+The plugin is a dual-face npm package (node half + `dsh.client` browser half) installed into a profile and mounted by that profile's own `cordis.patch.yml`. Design rationale lives in [DESIGN.md](DESIGN.md).
 
 ## Plugin contract (dsh conventions followed)
 
@@ -52,7 +52,7 @@ DevDependencies pin the published `@deepseek-ai/*@0.1.0-rc.6` type set, aligned 
 1. Install the package (choose one):
    - `dsh plugin --profile web add ./ui-settings-skills-0.1.0.tgz` (needs pnpm on PATH), or
    - `corepack pnpm add ./ui-settings-skills-0.1.0.tgz --dir <profile-dir>` in the profile directory (keep the pnpm major version consistent with the profile's existing `node_modules`).
-2. Append to `$DSH_HOME/profiles/<name>/cordis.patch.yml` (the profile's own layer — not repo code):
+2. Append to `$DSH_HOME/profiles/<name>/cordis.patch.yml` (the profile's own patch layer):
 
    ```yaml
    - insert:
