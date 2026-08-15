@@ -11,7 +11,7 @@ export type SkillManagementKey = typeof keys[number]
 
 export const en: Record<SkillManagementKey, string> = {
   nav: 'Skills',
-  title: 'Skill management',
+  title: 'Skills',
   intro: 'Skills grouped by workspace, with global and user-level skills folded in.',
   tabs: 'Workspaces',
   searchPlaceholder: 'Search skills',
@@ -33,7 +33,7 @@ export const en: Record<SkillManagementKey, string> = {
 
 export const zh: Record<SkillManagementKey, string> = {
   nav: '技能',
-  title: '技能管理',
+  title: '技能',
   intro: '技能按工作区组织，全局与用户级技能已叠加到每个工作区。',
   tabs: '工作区',
   searchPlaceholder: '搜索技能…',
