@@ -137,7 +137,11 @@ inject：`['slots', 'locale']`（M1 用 fetch 直连 host 路由，不需要 `re
 
 ## 7. M2 设计契约：开启/关闭（✅ 已实现）
 
-> **实现说明**：`src/policy.ts` 承载全部策略逻辑（settings 命名空间 `ui-settings-skills.policy`、`readPolicy`/`updatePolicy`、`createPolicyProvider`、`stubCandidate`）；`src/index.ts` 注册命名空间、全局层 provider 与 `PUT /plugin/settings-skills/policy`；catalog 聚合过滤 stub 行并把禁用行标记 `disabled`/`disabledScope`（user/workspace）；设置页每行渲染 house 风格开关（`role="switch"` + track/thumb）。裸探针与 skill-dev 端到端验证均通过：禁用后该技能从模型目录、`/name` 注入与 `/` 菜单（即所有 `ctx.skills` 消费面）消失；user 级禁用全局生效、workspace 级禁用只影响目标工作区；状态持久化于 settings.yaml。
+> **实现说明**：`src/policy.ts` 承载全部策略逻辑（settings 命名空间 `ui-settings-skills.policy`、`readPolicy`/`updatePolicy`、`createPolicyProvider`/`registerPolicyProvider`、`stubCandidate`、`findScopeTag`/`scopeTaggedContext`）；`src/index.ts` 注册命名空间、全局层/standing 层/agent 层 provider 与 `PUT /plugin/settings-skills/policy`；catalog 聚合过滤 stub 行并把禁用行标记 `disabled`/`disabledScope`（user/workspace）；设置页每行渲染 house 风格开关（`role="switch"` + track/thumb）。裸探针与 skill-dev 端到端验证均通过：禁用后该技能从模型目录、`/name` 注入与 `/` 菜单（即所有 `ctx.skills` 消费面）消失；user 级禁用全局生效、workspace 级禁用只影响目标工作区；状态持久化于 settings.yaml。
+>
+> **0.1.1 修正（web 组合下 `/` 菜单仍显示被禁技能的两条根因）**：
+> 1. invalidator 生命周期误用：注册表不持有 `SkillProviderControl`，原实现只把 `control.invalidate` 放进 `WeakRef` 集合——GC 回收后策略写入无法使注册表 collect 缓存失效（`revision` 不递增），`skill.list` 持续返回禁用前目录，直至重启。现改为随注册 disposer 生命周期管理的**强引用**集合。
+> 2. 冷会话盲区：`skill.list` 对无活 agent 的会话以 preset 的 **standing key** 为视图 scope（链中不含 agent 层），而 stub 只注册在全局层与 agent 层，均无法遮蔽 standing 层真实 provider。现把策略 provider 也注册进每个 preset 的 standing 层（与真实 provider 同层，rank 0 直胜）。因插件 bundle 与 harness bundle 各自内联 dsh-scope 副本、scope 标签为模块私有 `Symbol`，实现通过从活 scoped ctx 原型链嗅探运行时符号 + `ctx.extend` 打标签完成，零基础代码改动；诚实边界：某 preset 在本进程从未产生过活 agent 前，其冷会话视图仍无法覆盖（无任何 scoped ctx 可嗅探符号）。
 
 ### 7.1 目标语义
 

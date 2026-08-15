@@ -11,7 +11,8 @@
 
 import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SkillCandidate, SkillLookupOptions } from '@deepseek-ai/dsh-skill'
+import type { SkillCandidate, SkillLookupOptions, SkillProvider, SkillProviderControl } from '@deepseek-ai/dsh-skill'
+import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import z from '@deepseek-ai/schemastery'
 
 /** Settings namespace holding the policy document. */
@@ -175,4 +176,84 @@ export function stubCandidate(name: string): SkillCandidate {
     rank: 0,
     locator: { stub: name },
   }
+}
+
+/** Registries the shadowing provider mounts on (the host registry or a preset-owned one). */
+export interface PolicyRegisterable {
+  readonly registerProvider?: (create: (control: SkillProviderControl) => SkillProvider) => () => void
+}
+
+/**
+ * Mount the shadowing provider on one registry, holding its invalidation
+ * control STRONGLY in `invalidators`.
+ *
+ * The registry does not retain the `SkillProviderControl` after registration,
+ * so a weak-only reference is garbage-collected long before a policy write:
+ * the invalidators then dereference nothing, the registry's catalog cache
+ * never invalidates, and every `ctx.skills` consumer keeps serving the
+ * pre-disable catalog until a profile restart. The returned disposer removes
+ * the entry again, so the set never outlives a live registration.
+ * @param registry - the registry to mount on.
+ * @param invalidators - the strong set of live invalidate closures.
+ * @param policyCtx - plugin host context (workspace + settings resolution).
+ * @param policy - thunk reading the current policy at list time.
+ * @returns the exact disposer that unregisters the provider and drops the invalidator.
+ */
+export function registerPolicyProvider(
+  registry: PolicyRegisterable,
+  invalidators: Set<() => void>,
+  policyCtx: Context,
+  policy: () => SkillPolicy,
+): () => void {
+  const register = registry.registerProvider
+  if (register === undefined) return () => {}
+  let invalidate: (() => void) | undefined
+  // Method call with the registry as receiver: the real implementation reads
+  // `this`, and on a traceable proxy the receiver is what rebinds the
+  // registration into the caller's scope layer.
+  const disposeProvider = register.call(registry, (control) => {
+    invalidate = control.invalidate
+    invalidators.add(invalidate)
+    return createPolicyProvider(policyCtx, policy)
+  })
+  return () => {
+    disposeProvider()
+    if (invalidate !== undefined) invalidators.delete(invalidate)
+  }
+}
+
+/**
+ * Sniff the runtime's scope-tag symbol off a live scoped context.
+ *
+ * The plugin bundle inlines its own copies of the dsh-* packages while the
+ * runtime registry carries its own; `dsh-scope`'s tag is a module-private
+ * `Symbol`, so a tag written through an imported copy would be invisible to
+ * the runtime's `scopeOf`. The tag is an own property somewhere on the
+ * context's prototype chain and the only non-global-registry symbol there
+ * (cordis internals all use `Symbol.for`), so it can be recovered and reused
+ * through plain object semantics — no harness changes.
+ * @param sample - any context the runtime tagged with a scope (an agent ctx).
+ * @returns the runtime's scope-tag symbol, or undefined when `sample` carries none.
+ */
+export function findScopeTag(sample: unknown): symbol | undefined {
+  for (let cursor: unknown = sample; cursor !== null && cursor !== undefined && cursor !== Object.prototype; cursor = Object.getPrototypeOf(cursor as object)) {
+    for (const sym of Object.getOwnPropertySymbols(cursor as object)) {
+      if (Symbol.keyFor(sym) === undefined) return sym
+    }
+  }
+  return undefined
+}
+
+/**
+ * Mint a context whose scope tag is `key`, on top of `base`.
+ * `base.extend` shares the base's fiber, so registrations through the result
+ * are owned by the base's lifecycle while the runtime's `scopeOf` resolves
+ * the tag to `key`.
+ * @param base - plugin context to derive from.
+ * @param tag - the runtime's scope-tag symbol (from {@link findScopeTag}).
+ * @param key - the scope key to tag with.
+ * @returns the scope-tagged context.
+ */
+export function scopeTaggedContext(base: Context, tag: symbol, key: ScopeKey): Context {
+  return base.extend({ [tag]: key } as {})
 }
