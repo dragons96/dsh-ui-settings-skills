@@ -42,7 +42,7 @@ export const name = 'ui-settings-skills'
 /** Services required by the catalog route. */
 export const inject = ['skills', 'workspaceRegistry', 'webServer', 'agents']
 
-/** Plugin role: host (routes + namespace + provider) or policy (provider only, for agent-preset rows). */
+/** Plugin role: host (routes + namespace + provider) or policy (provider only). */
 export const Config = z.object({
   role: z.string().default('host'),
 })
@@ -200,7 +200,7 @@ export async function buildCatalog(
       }
       const merged = new Map(mergeRows(...scopedRows).map(row => [row.name, row]))
       // Policy rows win: a disabled skill renders off even where a live view
-      // still carries it (deployment without the policy preset row).
+      // still carries it.
       for (const [name, row] of disabledRowsFor(policy, workspace.workspaceId)) merged.set(name, row)
       dimensions.push({
         kind: 'workspace',
@@ -334,9 +334,8 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 
 /**
  * Register the shadowing provider, and — in the host role — the settings
- * namespace and the HTTP routes. A preset row mounts the same package with
- * `config: { role: 'policy' }` so its scope layer shadows disabled skills
- * without re-registering the namespace or routes.
+ * namespace and the HTTP routes. A policy role (`config.role === 'policy'`)
+ * registers only the provider, without the namespace or routes.
  */
 export function apply(ctx: Context, config: { role?: string } = {}): void {
   const skills = ctx.skills

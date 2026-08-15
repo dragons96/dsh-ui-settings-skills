@@ -11,21 +11,6 @@ A dsh plugin that adds a **Skill management** page to Web Settings, organized by
 - Skill descriptions clamp to two lines, with the full text shown on hover
 - **Enable/disable toggles**: switching a skill off hides it from the model catalog, the `/name` injection boundary, and the ui-skill `/` menu — everywhere `ctx.skills` is read. User-level skills toggle globally; project skills toggle per workspace. State persists in the settings document.
 
-## Enforcing toggles
-
-The toggle is enforced by a rank-0 shadowing skill provider: disabled skills are replaced by stubs (`modelInvocable: false`, `userInvocable: false`, `get()` → undefined), so every consumer stops seeing them.
-
-- **Web compositions** keep skill providers behind agent presets, so the shadowing provider must live in the same layer. Add this row to each preset you want enforced (`$DSH_HOME/.agent-presets/<preset>/cordis.yml`, or a copy of a shipped preset):
-
-  ```yaml
-  - name: ui-settings-skills
-    config:
-      role: policy
-  ```
-
-  The host row (profile `cordis.patch.yml`) already registers the provider at the global layer — that is what enforces toggles in host-provider compositions (TUI/headless), and it is harmless in web compositions.
-- A workspace whose sessions run a preset without the policy row still renders the disabled rows in the page, but the skills remain visible to the model and the `/` menu there — enforcement follows the preset that mounts the policy row.
-
 ## Install
 
 1. Build and pack the plugin:

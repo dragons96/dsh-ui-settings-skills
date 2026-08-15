@@ -138,8 +138,6 @@ inject：`['slots', 'locale']`（M1 用 fetch 直连 host 路由，不需要 `re
 ## 7. M2 设计契约：开启/关闭（✅ 已实现）
 
 > **实现说明**：`src/policy.ts` 承载全部策略逻辑（settings 命名空间 `ui-settings-skills.policy`、`readPolicy`/`updatePolicy`、`createPolicyProvider`、`stubCandidate`）；`src/index.ts` 注册命名空间、全局层 provider 与 `PUT /plugin/settings-skills/policy`；catalog 聚合过滤 stub 行并把禁用行标记 `disabled`/`disabledScope`（user/workspace）；设置页每行渲染 house 风格开关（`role="switch"` + track/thumb）。裸探针与 skill-dev 端到端验证均通过：禁用后该技能从模型目录、`/name` 注入与 `/` 菜单（即所有 `ctx.skills` 消费面）消失；user 级禁用全局生效、workspace 级禁用只影响目标工作区；状态持久化于 settings.yaml。
->
-> **部署**：web 组合下策略行需随 preset 挂载（`config: { role: 'policy' }` 只注册 provider，避免重复注册路由/命名空间）；host 角色（默认）在全局层注册 provider，覆盖 TUI/headless 组合。
 
 ### 7.1 目标语义
 
