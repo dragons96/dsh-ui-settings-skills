@@ -14,8 +14,10 @@
  * page renders the toggle off. The stub is mounted on the global registry
  * and, through each live agent, on the agent's own preset registry when the
  * preset composes one — both host-provider compositions (TUI/headless) and
- * web compositions (providers behind agent presets) are covered. The browser
- * never submits a raw path.
+ * web compositions (providers behind agent presets) are covered. After a
+ * policy write the plugin re-emits `agent-preset/selected` per session, which
+ * the api-remotes forward loop relays so the ui-skill client drops its cached
+ * `/` catalog and refetches. The browser never submits a raw path.
  *
  * @module ui-settings-skills
  */
@@ -33,6 +35,8 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 // Type-only: pulls the ctx.settings Context merge.
 import type {} from '@deepseek-ai/dsh-settings'
+import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import {
   createPolicyProvider, POLICY_NS, POLICY_PROVIDER, policySchema, readPolicy, updatePolicy,
@@ -270,6 +274,8 @@ function parsePolicyUpdate(body: unknown): PutPolicyRequest {
  * @param agentsBySession - live agent supplier keyed by session id (read at request time).
  * @param workspaces - workspace row supplier (read at request time).
  * @param invalidatePolicy - invalidate the shadowing provider's catalog caches.
+ * @param notifyPresetSelected - emit `agent-preset/selected` per session so the
+ *   ui-skill client drops its cached `/` catalog and refetches.
  * @returns the node:http handler.
  */
 function makeHandler(
@@ -278,6 +284,7 @@ function makeHandler(
   agentsBySession: () => ReadonlyMap<string, LiveAgentRow>,
   workspaces: () => readonly WorkspaceRow[],
   invalidatePolicy: () => void,
+  notifyPresetSelected: () => void,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     try {
@@ -300,6 +307,7 @@ function makeHandler(
         const update = parsePolicyUpdate(body)
         await updatePolicy(ctx, update)
         invalidatePolicy()
+        notifyPresetSelected()
         sendJson(res, 200, { ok: true })
         return
       }
@@ -437,11 +445,35 @@ export function apply(ctx: Context, config: { role?: string } = {}): void {
     title: workspace.title,
     sessionIds: workspace.sessionIds.map(String),
   }))
+  // The ui-skill `/` menu caches its catalog per session on the client and
+  // only refetches when the forwarded `agent-preset/selected` event arrives.
+  // Emit it with each session's real preset so the client drops the stale
+  // catalog right after a policy write; the event is in the api-remotes
+  // forwarded allowlist, and the preset label update is a no-op with the
+  // real id.
+  const sessions = ctx.get('sessions') as
+    | { list?: () => readonly { readonly id: unknown; readonly header: unknown; readonly events: readonly unknown[] }[] }
+    | undefined
+  const notifyPresetSelected = (): void => {
+    if (sessions?.list === undefined) return
+    for (const session of sessions.list()) {
+      try {
+        const presetId = resolveSessionPreset({
+          header: session.header,
+          events: session.events,
+        } as Parameters<typeof resolveSessionPreset>[0])
+        if (presetId === undefined) continue
+        ctx.emit('agent-preset/selected', session.id as SessionId, presetId)
+      } catch (error) {
+        ctx.logger.warn(`ui-settings-skills: preset notification failed: ${String(error)}`)
+      }
+    }
+  }
   ctx.effect(
     () => ctx.webServer.register({
       kind: 'prefix',
       path: API_PREFIX,
-      handler: makeHandler(ctx, skills, agentsBySession, workspaces, () => invalidatePolicy()),
+      handler: makeHandler(ctx, skills, agentsBySession, workspaces, () => invalidatePolicy(), notifyPresetSelected),
     }),
     'ui-settings-skills: catalog route',
   )
