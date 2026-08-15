@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
+import { POLICY_PROVIDER } from '../src/policy.ts'
 import { buildCatalog, toSkillRow, type LiveAgentRow, type SkillsReader, type WorkspaceRow } from '../src/index.ts'
 
 function mkSkill(name: string, overrides: Partial<Omit<SkillSummary, 'name'>> = {}): SkillSummary {
@@ -131,5 +132,38 @@ describe('buildCatalog', () => {
       skills: [],
       error: { code: 'workspace-catalog-failed', message: 'Error: provider exploded' },
     })
+  })
+
+  it('drops policy stub rows and renders policy-disabled skills with the toggle off', async () => {
+    const stub = { ...mkSkill('disabled-a'), provider: POLICY_PROVIDER }
+    const skills = reader(options => {
+      if (options === undefined) return [stub, mkSkill('user-skill', { source: 'user-agents' })]
+      if (options?.cwd === 'C:\\proj\\one') return [stub, mkSkill('project-skill')]
+      return []
+    })
+    const policy = {
+      user: { 'disabled-a': { description: 'the disabled user skill', source: 'user-agents' } },
+      workspace: { w1: { 'project-skill': { description: 'the disabled project skill', source: 'project-agents' } } },
+    }
+    const dimensions = await buildCatalog(skills, new Map(), workspaces, policy)
+
+    const w1 = dimensions[0]!
+    expect(w1.skills.map(s => s.name)).toEqual(['disabled-a', 'project-skill', 'user-skill'])
+    expect(w1.skills.find(s => s.name === 'disabled-a')).toMatchObject({
+      description: 'the disabled user skill',
+      source: 'user-agents',
+      disabled: true,
+      disabledScope: 'user',
+    })
+    expect(w1.skills.find(s => s.name === 'project-skill')).toMatchObject({
+      description: 'the disabled project skill',
+      source: 'project-agents',
+      disabled: true,
+      disabledScope: 'workspace',
+    })
+    // w2 (no workspace disables) still carries the user-level disabled row.
+    const w2 = dimensions[1]!
+    expect(w2.skills.map(s => s.name)).toEqual(['disabled-a', 'user-skill'])
+    expect(w2.skills.find(s => s.name === 'disabled-a')?.disabledScope).toBe('user')
   })
 })

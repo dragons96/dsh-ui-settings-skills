@@ -6,7 +6,12 @@
  * contributes its `user-agents` / `user-dsh` rows), the workspace's per-cwd
  * global view, and the scoped views of its live sessions (the workspace
  * record owns the session mapping). Per-session granularity is never shown.
- * The browser never submits a raw path.
+ *
+ * M2 toggles: a settings-namespace policy records disabled skills (user level
+ * and per workspace); a rank-0 shadowing provider replaces them with stubs so
+ * every `ctx.skills` consumer (model catalog, `/name` injection, the ui-skill
+ * menu RPC) stops seeing them, and the catalog marks them disabled so the
+ * page renders the toggle off. The browser never submits a raw path.
  *
  * @module ui-settings-skills
  */
@@ -22,13 +27,25 @@ import type {} from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 // Type-only: pulls the ctx.agents Context merge.
 import type {} from '@deepseek-ai/dsh-agent'
+// Type-only: pulls the ctx.settings Context merge.
+import type {} from '@deepseek-ai/dsh-settings'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
-import type { CatalogResponse, DimensionView, ErrorResponse, SkillRow } from './wire.ts'
+import {
+  createPolicyProvider, POLICY_NS, POLICY_PROVIDER, policySchema, readPolicy, updatePolicy,
+} from './policy.ts'
+import type { SkillPolicy } from './policy.ts'
+import z from '@deepseek-ai/schemastery'
+import type { CatalogResponse, DimensionView, ErrorResponse, PutPolicyRequest, SkillRow } from './wire.ts'
 
 export const name = 'ui-settings-skills'
 
 /** Services required by the catalog route. */
 export const inject = ['skills', 'workspaceRegistry', 'webServer', 'agents']
+
+/** Plugin role: host (routes + namespace + provider) or policy (provider only, for agent-preset rows). */
+export const Config = z.object({
+  role: z.string().default('host'),
+})
 
 /** Route prefix under which the plugin serves its API. */
 export const API_PREFIX = '/plugin/settings-skills'
@@ -85,24 +102,65 @@ function mergeRows(...batches: readonly SkillRow[][]): SkillRow[] {
   return [...merged.values()].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
 }
 
+/** Filter out the policy stub rows (the page renders them from the policy instead). */
+function withoutStubs(rows: readonly SkillRow[]): SkillRow[] {
+  return rows.filter(row => row.provider !== POLICY_PROVIDER)
+}
+
+/** The disabled rows for one workspace: user-level entries plus the workspace's own. */
+function disabledRowsFor(policy: SkillPolicy, workspaceId: string): Map<string, SkillRow> {
+  const rows = new Map<string, SkillRow>()
+  for (const [name, entry] of Object.entries(policy.user)) {
+    rows.set(name, {
+      name,
+      description: entry.description,
+      source: entry.source,
+      provider: POLICY_PROVIDER,
+      modelInvocable: false,
+      userInvocable: false,
+      disabled: true,
+      disabledScope: 'user',
+    })
+  }
+  const workspaceEntries = policy.workspace[workspaceId]
+  if (workspaceEntries !== undefined) {
+    for (const [name, entry] of Object.entries(workspaceEntries)) {
+      rows.set(name, {
+        name,
+        description: entry.description,
+        source: entry.source,
+        provider: POLICY_PROVIDER,
+        modelInvocable: false,
+        userInvocable: false,
+        disabled: true,
+        disabledScope: 'workspace',
+      })
+    }
+  }
+  return rows
+}
+
 /**
  * Aggregate the catalog. One dimension per workspace in registry order, each
  * folding the global layer, the user-level rows of every live agent, the
  * workspace's per-cwd global view, and the scoped views of its live sessions.
- * A workspace whose collection fails yields an error-bearing view instead of
- * failing the whole response; a failing session is contained inside its
- * workspace.
+ * Policy-disabled skills are replaced by their policy rows (rendered with the
+ * toggle off); a workspace whose collection fails yields an error-bearing
+ * view instead of failing the whole response; a failing session is contained
+ * inside its workspace.
  * @param skills - the skill registry reader.
  * @param agentsBySession - live agents keyed by session id (read at request time).
  * @param workspaces - workspace rows.
+ * @param policy - the current disable policy.
  * @returns the workspace dimension views.
  */
 export async function buildCatalog(
   skills: SkillsReader,
   agentsBySession: ReadonlyMap<string, LiveAgentRow>,
   workspaces: readonly WorkspaceRow[],
+  policy: SkillPolicy = { user: {}, workspace: {} },
 ): Promise<DimensionView[]> {
-  const globalRows = (await skills.snapshot()).skills.map(toSkillRow)
+  const globalRows = withoutStubs((await skills.snapshot()).skills.map(toSkillRow))
   const userLevelRows: SkillRow[] = []
   for (const row of globalRows) {
     if (USER_LEVEL_SOURCES.has(row.source)) userLevelRows.push(row)
@@ -110,8 +168,8 @@ export async function buildCatalog(
   const agents = [...agentsBySession.values()]
   for (const agent of agents) {
     try {
-      for (const row of (await skills.snapshot({ scope: agent.scope })).skills) {
-        if (USER_LEVEL_SOURCES.has(row.source)) userLevelRows.push(toSkillRow(row))
+      for (const row of withoutStubs((await skills.snapshot({ scope: agent.scope })).skills.map(toSkillRow))) {
+        if (USER_LEVEL_SOURCES.has(row.source)) userLevelRows.push(row)
       }
     } catch {
       // One agent's scope failure must not fail the whole catalog.
@@ -126,22 +184,26 @@ export async function buildCatalog(
         userRows,
         // The global layer's per-cwd view (host-plane providers; the web-app
         // bundle disables them, so this batch is empty there).
-        (await skills.snapshot({ cwd: workspace.path })).skills.map(toSkillRow),
+        withoutStubs((await skills.snapshot({ cwd: workspace.path })).skills.map(toSkillRow)),
       ]
       for (const sessionId of workspace.sessionIds) {
         const agent = agentsBySession.get(sessionId)
         if (agent === undefined) continue
         try {
-          scopedRows.push((await skills.snapshot({ scope: agent.scope, cwd: workspace.path })).skills.map(toSkillRow))
+          scopedRows.push(withoutStubs((await skills.snapshot({ scope: agent.scope, cwd: workspace.path })).skills.map(toSkillRow)))
         } catch {
           // One session's scope failure must not fail the whole workspace.
         }
       }
+      const merged = new Map(mergeRows(...scopedRows).map(row => [row.name, row]))
+      // Policy rows win: a disabled skill renders off even where a live view
+      // still carries it (deployment without the policy preset row).
+      for (const [name, row] of disabledRowsFor(policy, workspace.workspaceId)) merged.set(name, row)
       dimensions.push({
         kind: 'workspace',
         id: workspace.workspaceId,
         title: workspace.title,
-        skills: mergeRows(...scopedRows),
+        skills: [...merged.values()].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       })
     } catch (error) {
       dimensions.push({
@@ -171,12 +233,36 @@ function errorBody(code: string, message: string): ErrorResponse {
   return { error: { code, message } }
 }
 
+/** Narrow an unknown JSON value to a policy toggle write, throwing on malformed fields. */
+function parsePolicyUpdate(body: unknown): PutPolicyRequest {
+  const value = body as Partial<PutPolicyRequest> | null
+  if (typeof value !== 'object' || value === null) throw new Error('policy update must be an object')
+  const { kind, workspaceId, name, description, source, enabled } = value
+  if (kind !== 'user' && kind !== 'workspace') throw new Error('policy update kind must be "user" or "workspace"')
+  if (typeof name !== 'string' || name.length === 0) throw new Error('policy update requires a skill name')
+  if (typeof description !== 'string') throw new Error('policy update requires a description')
+  if (typeof source !== 'string') throw new Error('policy update requires a source')
+  if (typeof enabled !== 'boolean') throw new Error('policy update requires a boolean enabled')
+  if (kind === 'workspace' && (typeof workspaceId !== 'string' || workspaceId.length === 0)) {
+    throw new Error('workspace policy update requires a workspaceId')
+  }
+  return {
+    kind,
+    ...(workspaceId !== undefined ? { workspaceId } : {}),
+    name,
+    description,
+    source,
+    enabled,
+  }
+}
+
 /**
  * Route handler for the plugin API.
- * @param ctx - the plugin context, for logging.
+ * @param ctx - the plugin context, for logging and services.
  * @param skills - the skill registry reader.
  * @param agentsBySession - live agent supplier keyed by session id (read at request time).
  * @param workspaces - workspace row supplier (read at request time).
+ * @param invalidatePolicy - invalidate the shadowing provider's catalog caches.
  * @returns the node:http handler.
  */
 function makeHandler(
@@ -184,30 +270,96 @@ function makeHandler(
   skills: SkillsReader,
   agentsBySession: () => ReadonlyMap<string, LiveAgentRow>,
   workspaces: () => readonly WorkspaceRow[],
+  invalidatePolicy: () => void,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     try {
       const pathname = new URL(req.url ?? '/', 'http://ui-settings-skills').pathname
-      if (req.method !== 'GET') {
-        sendJson(res, 405, errorBody('method-not-allowed', `method ${req.method} is not allowed`))
+      if (pathname === `${API_PREFIX}/catalog`) {
+        if (req.method !== 'GET') {
+          sendJson(res, 405, errorBody('method-not-allowed', `method ${req.method} is not allowed`))
+          return
+        }
+        const dimensions = await buildCatalog(skills, agentsBySession(), workspaces(), readPolicy(ctx))
+        sendJson(res, 200, { dimensions } satisfies CatalogResponse)
         return
       }
-      if (pathname === `${API_PREFIX}/catalog`) {
-        const dimensions = await buildCatalog(skills, agentsBySession(), workspaces())
-        sendJson(res, 200, { dimensions } satisfies CatalogResponse)
+      if (pathname === `${API_PREFIX}/policy`) {
+        if (req.method !== 'PUT') {
+          sendJson(res, 405, errorBody('method-not-allowed', `method ${req.method} is not allowed`))
+          return
+        }
+        const body = await readJsonBody(req)
+        const update = parsePolicyUpdate(body)
+        await updatePolicy(ctx, update)
+        invalidatePolicy()
+        sendJson(res, 200, { ok: true })
         return
       }
       sendJson(res, 404, errorBody('not-found', `unknown route ${pathname}`))
     } catch (error) {
       ctx.logger.warn(`ui-settings-skills: ${String(error)}`)
-      sendJson(res, 500, errorBody('internal', String(error)))
+      sendJson(res, 400, errorBody('bad-request', String(error)))
     }
   }
 }
 
-/** Register the catalog route; disposal unregisters it. */
-export function apply(ctx: Context): void {
+/** Read a bounded JSON request body. */
+function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolvePromise, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > 64 * 1024) {
+        reject(new Error('request body too large'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      try {
+        resolvePromise(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      } catch (error) {
+        reject(error)
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
+/**
+ * Register the shadowing provider, and — in the host role — the settings
+ * namespace and the HTTP routes. A preset row mounts the same package with
+ * `config: { role: 'policy' }` so its scope layer shadows disabled skills
+ * without re-registering the namespace or routes.
+ */
+export function apply(ctx: Context, config: { role?: string } = {}): void {
   const skills = ctx.skills
+  const role = config.role ?? 'host'
+
+  if (role === 'host') {
+    const settings = ctx.get('settings') as { register?: (ns: string, schema: unknown) => { dispose?: () => void } } | undefined
+    if (settings?.register !== undefined) {
+      ctx.effect(() => {
+        // The closure re-checks because property narrowing does not survive
+        // into a deferred callback.
+        if (settings?.register === undefined) return () => {}
+        const scope = settings.register(POLICY_NS, policySchema)
+        return () => { scope.dispose?.() }
+      }, 'ui-settings-skills: policy namespace')
+    }
+  }
+
+  let invalidatePolicy = (): void => {}
+  ctx.effect(() => skills.registerProvider((control) => {
+    invalidatePolicy = () => control.invalidate()
+    return createPolicyProvider(ctx, () => readPolicy(ctx))
+  }), 'ui-settings-skills: policy provider')
+
+  if (role !== 'host') return
+
   const agentsBySession = () => new Map(
     ctx.agents.list().map(agent => [String(agent.id), { scope: agent } satisfies LiveAgentRow]),
   )
@@ -218,7 +370,11 @@ export function apply(ctx: Context): void {
     sessionIds: workspace.sessionIds.map(String),
   }))
   ctx.effect(
-    () => ctx.webServer.register({ kind: 'prefix', path: API_PREFIX, handler: makeHandler(ctx, skills, agentsBySession, workspaces) }),
+    () => ctx.webServer.register({
+      kind: 'prefix',
+      path: API_PREFIX,
+      handler: makeHandler(ctx, skills, agentsBySession, workspaces, () => invalidatePolicy()),
+    }),
     'ui-settings-skills: catalog route',
   )
 }

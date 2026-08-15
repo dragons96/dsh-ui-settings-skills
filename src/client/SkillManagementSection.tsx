@@ -9,7 +9,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip, IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { CatalogResponse, DimensionView, SkillRow } from '../wire.ts'
+import type { CatalogResponse, DimensionView, PutPolicyRequest, SkillRow } from '../wire.ts'
 import { sourceLabelKey, type SkillManagementKey } from './locales.ts'
 import css from './SkillManagementSection.module.css'
 
@@ -17,6 +17,8 @@ import css from './SkillManagementSection.module.css'
 export interface SkillManagementSectionInjected {
   /** Read the full catalog; called when the section first renders. */
   load: () => Promise<CatalogResponse>
+  /** Write one policy toggle (disable or re-enable a skill). */
+  setSkillDisabled: (request: PutPolicyRequest) => Promise<void>
 }
 
 /** Full component props. */
@@ -70,13 +72,69 @@ function sourceLabel(source: string, t: (key: SkillManagementKey) => string): st
   return key === undefined ? source : t(key)
 }
 
-/** Render one skill row with its right-aligned scope badge. */
-function SkillRowView({ row, t }: { row: SkillRow; t: (key: SkillManagementKey) => string }): ReactNode {
+/** The policy scope a row toggles: its disabled scope when disabled, else its source. */
+function policyKindOf(row: SkillRow): 'user' | 'workspace' {
+  if (row.disabledScope !== undefined) return row.disabledScope
+  return row.source === 'user-agents' || row.source === 'user-dsh' ? 'user' : 'workspace'
+}
+
+/**
+ * Render one skill row: name, right-aligned scope badge, and the enable
+ * switch (house track/thumb style).
+ * @param row - the skill row.
+ * @param t - the bound locale translator.
+ * @param workspaceId - the owning workspace (for workspace-kind toggles).
+ * @param setSkillDisabled - the policy write face.
+ * @param onChanged - called after a successful write so the page reloads.
+ * @returns the row.
+ */
+function SkillRowView({
+  row, t, workspaceId, setSkillDisabled, onChanged,
+}: {
+  row: SkillRow
+  t: (key: SkillManagementKey) => string
+  workspaceId: string
+  setSkillDisabled: (request: PutPolicyRequest) => Promise<void>
+  onChanged: () => void
+}): ReactNode {
+  const [saving, setSaving] = useState(false)
+  const enabled = row.disabled !== true
+  const toggle = async (): Promise<void> => {
+    if (saving) return
+    setSaving(true)
+    try {
+      const kind = policyKindOf(row)
+      await setSkillDisabled({
+        kind,
+        ...(kind === 'workspace' ? { workspaceId } : {}),
+        name: row.name,
+        description: row.description,
+        source: row.source,
+        enabled,
+      })
+      onChanged()
+    } finally {
+      setSaving(false)
+    }
+  }
   return (
     <li className={css.row}>
       <div className={css.rowHead}>
         <span className={css.rowName}>{row.name}</span>
         <span className={css.badge}>{sourceLabel(row.source, t)}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label={`${row.name}: ${enabled ? t('enabled') : t('disabled')}`}
+          className={css.switch}
+          disabled={saving}
+          onClick={() => { void toggle() }}
+        >
+          <span className={css.track} data-on={enabled ? 'true' : undefined} aria-hidden="true">
+            <span className={css.thumb} />
+          </span>
+        </button>
       </div>
       <ClampedDescription description={row.description} />
     </li>
@@ -99,7 +157,7 @@ function filterRows(dimension: DimensionView, query: string): readonly SkillRow[
  * @returns the section with loading/error/ready states.
  */
 export function SkillManagementSection(props: SkillManagementSectionProps): ReactNode {
-  const { t, load } = props
+  const { t, load, setSkillDisabled } = props
   const [state, setState] = useState<PageState>({ phase: 'loading' })
   const [attempt, setAttempt] = useState(0)
   const [activeId, setActiveId] = useState<string>()
@@ -211,7 +269,16 @@ export function SkillManagementSection(props: SkillManagementSectionProps): Reac
                     }
                     return (
                       <ul className={css.list}>
-                        {rows.map(row => <SkillRowView key={row.name} row={row} t={t} />)}
+                        {rows.map(row => (
+                          <SkillRowView
+                            key={row.name}
+                            row={row}
+                            t={t}
+                            workspaceId={dimension.id}
+                            setSkillDisabled={setSkillDisabled}
+                            onChanged={() => { setAttempt(value => value + 1) }}
+                          />
+                        ))}
                       </ul>
                     )
                   })()}

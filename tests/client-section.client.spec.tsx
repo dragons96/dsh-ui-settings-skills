@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { SkillManagementSection, type SkillManagementSectionProps } from '../src/client/SkillManagementSection.tsx'
@@ -18,6 +18,7 @@ const fixture: CatalogResponse = {
       skills: [
         { name: 'global-skill', description: 'a global skill', source: 'bundled', provider: 'skill-filesystem', modelInvocable: true, userInvocable: true },
         { name: 'project-skill', description: 'a project skill with a long description that would wrap over several lines', source: 'project-agents', provider: 'skill-filesystem', modelInvocable: false, userInvocable: true },
+        { name: 'disabled-skill', description: 'a disabled user skill', source: 'user-agents', provider: 'ui-settings-skills-policy', modelInvocable: false, userInvocable: false, disabled: true, disabledScope: 'user' },
       ],
     },
     {
@@ -68,6 +69,45 @@ describe('SkillManagementSection', () => {
     expect(container.textContent).not.toContain('userOnly')
     // The inactive workspace is not mounted yet.
     expect(container.textContent).not.toContain('find-docs')
+    root.unmount()
+  })
+
+  it('renders an enable switch per row, off for policy-disabled skills', async () => {
+    const { root, container } = mount({})
+    await act(async () => {})
+    const switches = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')]
+    expect(switches).toHaveLength(3)
+    expect(switches.find(s => s.getAttribute('aria-label')?.includes('global-skill'))?.getAttribute('aria-checked')).toBe('true')
+    expect(switches.find(s => s.getAttribute('aria-label')?.includes('disabled-skill'))?.getAttribute('aria-checked')).toBe('false')
+    root.unmount()
+  })
+
+  it('writes a workspace toggle for a project skill and a user toggle for a user skill', async () => {
+    const setSkillDisabled = vi.fn(async () => {})
+    const load = vi.fn(async () => fixture)
+    const { root, container } = mount({ setSkillDisabled, load } as never)
+    await act(async () => {})
+    const switches = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')]
+    const projectSwitch = switches.find(s => s.getAttribute('aria-label')?.includes('project-skill'))!
+    await act(async () => { projectSwitch.click() })
+    expect(setSkillDisabled).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'workspace',
+      workspaceId: 'w1',
+      name: 'project-skill',
+      enabled: true,
+    }))
+    // The reload after the first write replaces the DOM; re-query before the
+    // second click.
+    const reloadedSwitches = [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')]
+    const userSwitch = reloadedSwitches.find(s => s.getAttribute('aria-label')?.includes('disabled-skill'))!
+    await act(async () => { userSwitch.click() })
+    expect(setSkillDisabled).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'user',
+      name: 'disabled-skill',
+      enabled: false,
+    }))
+    // Each successful write reloads the catalog.
+    expect(load).toHaveBeenCalledTimes(3)
     root.unmount()
   })
 
@@ -151,3 +191,5 @@ describe('sourceLabelKey', () => {
     expect(en.sourceUserDsh).toBe('User')
   })
 })
+
+

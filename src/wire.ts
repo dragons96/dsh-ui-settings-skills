@@ -23,6 +23,10 @@ export interface SkillRow {
   readonly userInvocable: boolean
   /** Provider-specific resource-base kind, when the skill carries one. */
   readonly resourceBaseKind?: string
+  /** True when this skill is disabled by the policy (the toggle renders off). */
+  readonly disabled?: boolean
+  /** Which policy scope disabled this row; present when disabled. */
+  readonly disabledScope?: 'user' | 'workspace'
 }
 
 /** One workspace's catalog view (the only dimension the page shows). */
@@ -41,6 +45,18 @@ export interface DimensionView {
 /** GET /plugin/settings-skills/catalog response value. */
 export interface CatalogResponse {
   readonly dimensions: readonly DimensionView[]
+}
+
+/** One toggle write sent to PUT /plugin/settings-skills/policy. */
+export interface PutPolicyRequest {
+  /** user = a `~/.agents/skills` skill (applies to every workspace); workspace = a project skill of one workspace. */
+  readonly kind: 'user' | 'workspace'
+  /** Required when kind is workspace. */
+  readonly workspaceId?: string
+  readonly name: string
+  readonly description: string
+  readonly source: string
+  readonly enabled: boolean
 }
 
 /** Uniform plugin-route error body. */
