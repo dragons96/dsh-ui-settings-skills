@@ -1,9 +1,23 @@
 {
-  "name": "dsh-client-ui-settings-skills",
+  "name": "@dsh-mixxed/dsh-client-ui-settings-skills",
   "version": "0.1.1",
   "description": "Out-of-tree dsh plugin: a Skill management page in Web Settings (read-only catalog over harness / user / workspace dimensions).",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsh-mixxed/dsh-client-ui-settings-skills.git"
+  },
+  "keywords": [
+    "dsh",
+    "plugin",
+    "deepseek",
+    "settings",
+    "skills"
+  ],
   "files": [
     "lib"
   ],
@@ -25,6 +39,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "pack": "npm pack"

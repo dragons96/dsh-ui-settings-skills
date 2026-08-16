@@ -2,6 +2,8 @@
 
 A dsh plugin that adds a **Skill management** page to Web Settings, organized by workspace.
 
+Built as a fully out-of-tree plugin — the deepseek-harness source stays untouched. It registers a `settings.section` slot (the page appears in Settings → **技能 / Skills**) and serves its skill catalog over its own HTTP route (`ctx.webServer`).
+
 ## Features
 
 - One tab per workspace, with global and user-level skills folded into every workspace view
@@ -37,23 +39,25 @@ State persists in the settings document (`ui-settings-skills.policy` namespace),
    pnpm run typecheck
    pnpm test
    pnpm run build
-   npm pack          # dsh-client-ui-settings-skills-0.1.1.tgz
+   npm pack          # dsh-mixxed-dsh-client-ui-settings-skills-0.1.1.tgz
    ```
 
 2. Install the package into your profile:
 
    ```sh
-   dsh plugin --profile web add ./dsh-client-ui-settings-skills-0.1.1.tgz
+   dsh plugin --profile web add ./dsh-mixxed-dsh-client-ui-settings-skills-0.1.1.tgz
    ```
 
-   (or from the profile directory: `corepack pnpm add ./dsh-client-ui-settings-skills-0.1.1.tgz --dir <profile-dir>`)
+   (or from the profile directory: `corepack pnpm add ./dsh-mixxed-dsh-client-ui-settings-skills-0.1.1.tgz --dir <profile-dir>`)
+
+   (or once published to npm: `corepack pnpm add @dsh-mixxed/dsh-client-ui-settings-skills --dir <profile-dir>`)
 
 3. Mount it in `$DSH_HOME/profiles/<name>/cordis.patch.yml`:
 
    ```yaml
    - insert:
        - id: ui-settings-skills              # plugin id (unchanged)
-         name: dsh-client-ui-settings-skills # npm package name
+         name: "@dsh-mixxed/dsh-client-ui-settings-skills" # npm package name
    ```
 
 4. Restart the profile and open Settings → **技能 / Skills**.
@@ -65,3 +69,7 @@ dsh --profile <name> --dump-config | Select-String ui-settings-skills
 ```
 
 After the restart, the Skills page shows one tab per workspace, a search box, and localized skill rows.
+
+## License
+
+[MIT](LICENSE)
