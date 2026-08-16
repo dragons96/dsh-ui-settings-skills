@@ -50,17 +50,16 @@
 ## 5. 挂载方式（不改仓库）
 
 ```sh
-# 1) 把插件装进 web profile（在独立工程目录构建出产物后）
-dsh plugin --profile web add <本地路径或 tarball 或 git>
-
-# 2) 在 $DSH_HOME/profiles/web/cordis.patch.yml（用户自有文件）insert 一行：
-#    - id: ui-settings-skills            # 插件 id（不变，宿主 cordis 身份）
-#      name: dsh-client-ui-settings-skills  # npm 包名（loader 模块解析 + client-modules 条目 id）
+# 包声明 dsh.bundle.patch（包内 cordis.patch.yml），dsh plugin add 自动追加进
+# profile 的 dsh.profile.bundles，下次启动自动挂载——无需手改 cordis.patch.yml
+dsh plugin --profile web add @dsh-mixxed/dsh-client-ui-settings-skills
+dsh --profile web --dump-config   # 确认行进入组合树（含 # == @dsh-mixxed/... 层注释）
 ```
 
 要点：
 
 - profile 目录：`$DSH_HOME/profiles/<name>/`（默认 `~/.dsh/profiles/<name>/`），含 `package.json`（依赖 + `dsh.profile.bundles`）与用户自己的 `cordis.patch.yml`。
+- `cordis.patch.yml` 是用户自有文件，CLI 永不自动改写；bundle 层（包内自带的 patch）与用户层是独立层。从旧版本（未声明 bundle）升级时删除用户层里旧的 `ui-settings-skills` 挂载行，否则 id 挂载两次。
 - 插件集（新增/移除行）变更后**需要重启**：`client-modules` 的包元数据缓存（`pkgMeta`）"never expires"，`internal/plugin` 事件只覆盖已挂载行的 bundle 内容热更新（`rebuilt()`），不会发现新包。
 - 开发期 bundle 热更新：可仿照 harness 的 dev 流程自行起 watch（重新打包 client bundle 后走 `rebuilt()` 通知），或直接重启。
 - 用 `dsh --profile web --dump-config` 验证行已进入组合树。
@@ -234,7 +233,7 @@ node half 依赖 `@deepseek-ai/dsh-skill`（类型 + 注册表服务类型）、
 
 ## 10. 里程碑
 
-- **M1.1 骨架** ✅ 已交付：独立工程脚手架、esbuild 双产物构建链（node + client）、依赖分发（npm 发布版 `@deepseek-ai/*@0.1.0-rc.6` 与已装 dsh rc.6 运行时对齐）、安装到测试 profile `skill-dev`、空页面挂载成功（`__DSH_BOOT__` 条目 + `/plugins/ui-settings-skills/client.js` 可 serve）。
+- **M1.1 骨架** ✅ 已交付：独立工程脚手架、esbuild 双产物构建链（node + client）、依赖分发（npm 发布版 `@deepseek-ai/*@0.1.0-rc.6` 与已装 dsh rc.6 运行时对齐）、安装到测试 profile `skill-dev`、空页面挂载成功（`__DSH_BOOT__` 条目 + `/plugins/@dsh-mixxed/dsh-client-ui-settings-skills/client.js` 可 serve）。
 - **M1.2 展示** ✅ 已交付：host 聚合 API（harness/user/workspace 三维度、会话数据按 cwd 聚合进工作区、逐维度容错）+ 设置页渲染（维度分组、作用域/调用面徽标、加载/错误/空三态）。组装验证：catalog 在 deepseek-harness 工作区返回 13 个真实技能（聚合语义正确），404/405 正确。
 - **M2 开关**：策略 provider + settings 持久化 + policy API + 页面开关交互；需先评审 §7.4 边界。
 
