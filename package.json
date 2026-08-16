@@ -1,6 +1,6 @@
 {
   "name": "@dsh-mixxed/dsh-client-ui-settings-skills",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Out-of-tree dsh plugin: a Skill management page in Web Settings (read-only catalog over harness / user / workspace dimensions).",
   "type": "module",
   "license": "MIT",
